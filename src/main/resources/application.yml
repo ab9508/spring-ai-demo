@@ -1,0 +1,17 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: spring-ai-demo
+
+  # DeepSeek API配置
+  ai:
+    openai:
+      # ⚠️ 替换成你的DeepSeek API Key
+      api-key: sk-8d9d48b1a2554019ad72d1b3052a85c2
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.7
