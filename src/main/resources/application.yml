@@ -4,14 +4,23 @@ server:
 spring:
   application:
     name: spring-ai-demo
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
 
-  # DeepSeek API配置
+  # ============ AI 配置 ============
   ai:
     openai:
-      # ⚠️ 替换成你的DeepSeek API Key
+      # Chat：DeepSeek（spring-ai-starter-model-openai 自动装配读取这些配置）
       api-key: sk-8d9d48b1a2554019ad72d1b3052a85c2
       base-url: https://api.deepseek.com
       chat:
         options:
           model: deepseek-chat
           temperature: 0.7
+
+      # Embedding：智谱AI（在 SpringAiDemoApplication 中手动创建 Bean）
+      # api-key 和 base-url 已硬编码在 Java Bean 中（因为 Spring RestClient 的路径拼接问题）
+      embedding:
+        api-key: bc441c05feb44785be6c6ffc496cb0b3.TgvOYVoMFHfds9tD
