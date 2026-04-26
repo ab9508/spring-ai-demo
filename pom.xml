@@ -67,6 +67,13 @@
             <artifactId>spring-ai-pdf-document-reader</artifactId>
         </dependency>
 
+        <!-- Ollama 核心模型（仅用于 Embedding，不用 starter 避免自动配置 OllamaChatModel 冲突） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-ollama</artifactId>
+        </dependency>
+
+
         <!-- 向量存储核心：SimpleVectorStore（内存级，无需外部数据库，仅用于学习/Demo）-->
         <!-- 注意：没有 starter，需在代码中手动 @Bean 创建 SimpleVectorStore 实例 -->
         <!-- SimpleVectorStore 包含在 spring-ai-vector-store 核心模块中 -->

@@ -1,46 +1,28 @@
 package com.example.ai;
 
-import org.springframework.ai.document.MetadataMode;
-import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.embedding.EmbeddingRequest;
-import org.springframework.ai.embedding.EmbeddingResponse;
-import org.springframework.ai.openai.OpenAiEmbeddingModel;
-import org.springframework.ai.openai.OpenAiEmbeddingOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
+import io.micrometer.observation.ObservationRegistry;
+import org.springframework.ai.ollama.OllamaEmbeddingModel;
+import org.springframework.ai.ollama.api.OllamaApi;
+import org.springframework.ai.ollama.api.OllamaOptions;
+import org.springframework.ai.ollama.management.ModelManagementOptions;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
-import java.util.List;
-
 /**
  * ============ 两个 AI 各管各的事 ============
  * <p>
- * ChatClient（对话）     → DeepSeek
- * EmbeddingModel（向量化）→ 智谱AI（手动创建）
+ * ChatClient（对话）     → DeepSeek（spring-ai-starter-model-openai 自动装配）
+ * EmbeddingModel（向量化）→ Ollama nomic-embed-text（手动创建，本地运行，免费无限制）
  * VectorStore（向量存储）→ SimpleVectorStore（内存）
  * <p>
- * ============ 为什么要手动创建 EmbeddingModel？ ============
- * spring-ai-starter-model-openai 只包含 Chat 自动装配，不包含 Embedding 自动装配。
- * 所以必须手动创建 EmbeddingModel Bean 指向智谱 AI。
- * <p>
- * ============ URL 拼接原理（踩坑关键）============
- * OpenAiApi 使用 Spring RestClient 构建 HTTP 客户端：
- * RestClient.builder().baseUrl(baseUrl).build()
- * <p>
- * 发请求时：
- * restClient.post().uri(embeddingsPath)
- * <p>
- * ⚠️ 如果 embeddingsPath 以 "/" 开头（绝对路径），RestClient 会忽略 baseUrl！
- * ⚠️ 导致请求直接发到 "/" + embeddingsPath，没有域名前缀，返回 404。
- * <p>
- * 所以：
- * baseUrl       = https://open.bigmodel.cn/api/paas/v4
- * embeddingsPath = embeddings    （不以 / 开头）
- * 最终 URL       = https://open.bigmodel.cn/api/paas/v4/embeddings  ✅
+ * ============ 为什么用 Ollama 做 Embedding？ ============
+ * 1. 智谱AI 余额不足，Ollama 本地免费
+ * 2. nomic-embed-text 模型体积小、效果好，768维向量
+ * 3. 只引入 spring-ai-ollama 核心 jar（不是 starter），
+ *    避免 OllamaChatAutoConfiguration 自动配置与 DeepSeek ChatModel 冲突
  */
 @SpringBootApplication
 public class SpringAiDemoApplication {
@@ -49,30 +31,26 @@ public class SpringAiDemoApplication {
         SpringApplication.run(SpringAiDemoApplication.class, args);
     }
 
-    @Value("${spring.ai.openai.embedding.api-key}")
-    private String embeddingApiKey;
-
     @Bean
-    public EmbeddingModel embeddingModel() {
-        System.out.println("【Bean初始化】创建智谱AI EmbeddingModel...");
+    public OllamaEmbeddingModel ollamaEmbeddingModel() {
+        System.out.println("【Bean初始化】创建 Ollama EmbeddingModel（nomic-embed-text）...");
 
-        OpenAiApi openAiApi = OpenAiApi.builder()
-                .apiKey(embeddingApiKey)
-                .baseUrl("https://open.bigmodel.cn/api/paas/v4")
-                .embeddingsPath("/embeddings")  // 不以 / 开头！否则 RestClient 会忽略 baseUrl
-                .build();
+        OllamaApi ollamaApi = OllamaApi.builder().build();
 
-        OpenAiEmbeddingModel embeddingModel = new OpenAiEmbeddingModel(openAiApi, MetadataMode.EMBED,
-                OpenAiEmbeddingOptions.builder().model("embedding-3").build());
+        OllamaEmbeddingModel embeddingModel = new OllamaEmbeddingModel(
+                ollamaApi,
+                OllamaOptions.builder().model("nomic-embed-text").build(),
+                ObservationRegistry.NOOP,
+                ModelManagementOptions.builder().build()
+        );
 
-        // 启动时测试一次，确保能调通
+        // 启动时测试连通性
         try {
-            EmbeddingResponse response = embeddingModel.call(
-                    new EmbeddingRequest(List.of("测试"), null));
-            System.out.println("【Bean初始化】✅ 智谱AI Embedding 连通！向量维度="
-                    + response.getResults().get(0).getOutput().length);
+            float[] result = embeddingModel.embed("连通测试");
+            System.out.println("【Bean初始化】✅ Ollama Embedding 连通！向量维度=" + result.length);
         } catch (Exception e) {
-            System.out.println("【Bean初始化】❌ 智谱AI Embedding 失败：" + e.getMessage());
+            System.out.println("【Bean初始化】❌ Ollama Embedding 失败：" + e.getMessage());
+            System.out.println("【Bean初始化】请确认：1) ollama 服务已启动  2) 已执行 ollama pull nomic-embed-text");
             e.printStackTrace();
         }
 
@@ -80,9 +58,9 @@ public class SpringAiDemoApplication {
     }
 
     @Bean
-    public VectorStore vectorStore(EmbeddingModel embeddingModel) {
+    public VectorStore vectorStore(OllamaEmbeddingModel ollamaEmbeddingModel) {
         System.out.println("【Bean初始化】创建 SimpleVectorStore");
-        return SimpleVectorStore.builder(embeddingModel).build();
+        return SimpleVectorStore.builder(ollamaEmbeddingModel).build();
     }
 
 }

@@ -10,9 +10,9 @@ spring:
       max-request-size: 50MB
 
   # ============ AI 配置 ============
+  # Chat 对话：DeepSeek（spring-ai-starter-model-openai 自动装配读取此配置）
   ai:
     openai:
-      # Chat：DeepSeek（spring-ai-starter-model-openai 自动装配读取这些配置）
       api-key: sk-8d9d48b1a2554019ad72d1b3052a85c2
       base-url: https://api.deepseek.com
       chat:
@@ -20,7 +20,5 @@ spring:
           model: deepseek-chat
           temperature: 0.7
 
-      # Embedding：智谱AI（在 SpringAiDemoApplication 中手动创建 Bean）
-      # api-key 和 base-url 已硬编码在 Java Bean 中（因为 Spring RestClient 的路径拼接问题）
-      embedding:
-        api-key: bc441c05feb44785be6c6ffc496cb0b3.TgvOYVoMFHfds9tD
+  # Embedding：Ollama 本地（在 SpringAiDemoApplication 中手动创建 Bean，不走 yml 配置）
+  # 确保本地已执行：ollama pull nomic-embed-text && ollama serve
