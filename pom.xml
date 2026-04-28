@@ -77,10 +77,6 @@
         <!-- 向量存储核心：SimpleVectorStore（内存级，无需外部数据库，仅用于学习/Demo）-->
         <!-- 注意：没有 starter，需在代码中手动 @Bean 创建 SimpleVectorStore 实例 -->
         <!-- SimpleVectorStore 包含在 spring-ai-vector-store 核心模块中 -->
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-vector-store</artifactId>
-        </dependency>
 
         <!-- 测试 -->
         <dependency>
@@ -88,6 +84,19 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- PostgreSQL + pgvector 向量数据库 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
+        </dependency>
+
+        <!-- PostgreSQL JDBC 驱动 -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+
+
     </dependencies>
 
     <build>

@@ -8,10 +8,18 @@ spring:
     multipart:
       max-file-size: 50MB
       max-request-size: 50MB
-
+  datasource:
+    url: jdbc:postgresql://localhost:5432/mydb
+    username: postgres
+    password: 123456          # 和 docker-compose 中的一致
+    driver-class-name: org.postgresql.Driver
+  ai:
+    vectorstore:
+      pgvector:
+        initialize-schema: true    # 自动创建向量表（首次启动用）
+        dimensions: 768             # nomic-embed-text 的维度
   # ============ AI 配置 ============
   # Chat 对话：DeepSeek（spring-ai-starter-model-openai 自动装配读取此配置）
-  ai:
     openai:
       api-key: sk-8d9d48b1a2554019ad72d1b3052a85c2
       base-url: https://api.deepseek.com
