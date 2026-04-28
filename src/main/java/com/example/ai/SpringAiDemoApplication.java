@@ -22,14 +22,16 @@ import org.springframework.context.annotation.Primary;
  * 1. 智谱AI 余额不足，Ollama 本地免费
  * 2. nomic-embed-text 模型体积小、效果好，768维向量
  * 3. 只引入 spring-ai-ollama 核心 jar（不是 starter），
- *    避免 OllamaChatAutoConfiguration 自动配置与 DeepSeek ChatModel 冲突
+ * 避免 OllamaChatAutoConfiguration 自动配置与 DeepSeek ChatModel 冲突
  * <p>
  * ============ 为什么加 @Primary？ ============
  * spring-ai-starter-model-openai 会自动注册 OpenAiEmbeddingModel（即使 exclude 了其 AutoConfig）
  * PgVectorStoreAutoConfiguration 需要注入唯一的 EmbeddingModel，有两个时报错
+ *应该也不用scanBasePackages扫包
  * @Primary 告诉 Spring：有歧义时优先用 ollamaEmbeddingModel
  */
-@SpringBootApplication(exclude = {OpenAiEmbeddingAutoConfiguration.class})
+@SpringBootApplication(exclude = {OpenAiEmbeddingAutoConfiguration.class},
+        scanBasePackages = "com.example.ai")
 public class SpringAiDemoApplication {
 
     public static void main(String[] args) {
