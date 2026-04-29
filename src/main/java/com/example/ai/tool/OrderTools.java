@@ -1,5 +1,6 @@
 package com.example.ai.tool;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Component;
  * - 方法参数直接写，不需要包装成 Request record
  * - 返回值 AI 会自动序列化为 JSON 读取
  */
+@Slf4j
 @Component
 public class OrderTools {
 
@@ -34,7 +36,7 @@ public class OrderTools {
      */
     @Tool(description = "根据订单号查询订单的当前状态、收货地址、物流信息。当用户询问订单状态、物流进度、订单详情时调用此工具。")
     public OrderQueryResponse queryOrder(String orderId) {
-        System.out.println("【Tool调用】queryOrder 被调用，orderId=" + orderId);
+        log.info("【Tool调用】queryOrder 被调用，orderId=" + orderId);
 
         OrderQueryResponse response = new OrderQueryResponse();
         response.setOrderId(orderId);
@@ -50,9 +52,11 @@ public class OrderTools {
 
         return response;
     }
-// 编译爆红不影响运行
+
+    // 编译爆红不影响运行
     //http://localhost:8080/agent/chat?message=帮我查下商品iD001的库存
-public StockQueryResponse queryStock(StockQueryRequest request) {
+    @Tool(description = "商品库存。当用户需要查询商品库存时调用")
+    public StockQueryResponse queryStock(StockQueryRequest request) {
         StockQueryResponse resp = new StockQueryResponse();
         resp.setProductId(request.getProductId());
         resp.setProductName("Java高级编程（第4版）");

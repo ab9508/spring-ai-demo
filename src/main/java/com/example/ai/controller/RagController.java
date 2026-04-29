@@ -1,5 +1,6 @@
 package com.example.ai.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -24,6 +25,7 @@ import java.util.stream.Collectors;
  * ① vectorStore.similaritySearch() → 内部调 智谱AI Embedding → 把问题转向量 → 检索相关片段
  * ② chatClient.prompt().call()     → 内部调 DeepSeek Chat    → 基于检索结果生成回答
  */
+@Slf4j
 @RestController
 @RequestMapping("/rag")
 public class RagController {
@@ -47,7 +49,7 @@ public class RagController {
     @PostMapping("/upload")
     public String upload(@RequestParam("file") MultipartFile file) throws Exception {
         String result = ragService.uploadDocument(file);
-        System.out.println("【upload】" + result);
+        log.info("【upload】" + result);
         return result;
     }
 
@@ -71,7 +73,7 @@ public class RagController {
                         .topK(5)
                         .build()
         );
-        System.out.println("【ask】检索到 " + relevantDocs.size() + " 个相关片段");
+        log.info("【ask】检索到 " + relevantDocs.size() + " 个相关片段");
 
         // ② 拼装上下文
         String context = relevantDocs.stream()
@@ -87,7 +89,7 @@ public class RagController {
                 .user(question)
                 .call()
                 .content();
-        System.out.println("【ask】回答内容==》" + content);
+        log.info("【ask】回答内容==》" + content);
         return content;
     }
 }

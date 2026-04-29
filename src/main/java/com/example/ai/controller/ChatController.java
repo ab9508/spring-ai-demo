@@ -1,5 +1,6 @@
 package com.example.ai.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 1. 基础对话: http://localhost:8080/chat?message=你好
  * 2. 带角色设定: http://localhost:8080/chat/role?message=帮我写一个冒泡排序
  */
+@Slf4j
 @RestController
 public class ChatController {
 
@@ -26,12 +28,12 @@ public class ChatController {
      */
     @GetMapping("/chat")
     public String chat(@RequestParam String message) {
-        System.out.println("【chat】message==>" + message);
+        log.info("【chat】message==>" + message);
         String content = chatClient.prompt()
                 .user(message)
                 .call()
                 .content();
-        System.out.println("【chat】return==>" + content);
+        log.info("【chat】return==>" + content);
         return content;
     }
 
@@ -40,13 +42,13 @@ public class ChatController {
      */
     @GetMapping("/chat/role")
     public String chatWithRole(@RequestParam String message) {
-        System.out.println("【chat role】message==>" + message);
+        log.info("【chat role】message==>" + message);
         String content = chatClient.prompt()
                 .system("你是一个专业的Java技术顾问，回答要简洁、准确、有技术深度。")
                 .user(message)
                 .call()
                 .content();
-        System.out.println("【chat role】return==>" + content);
+        log.info("【chat role】return==>" + content);
         return content;
     }
 }

@@ -1,6 +1,7 @@
 package com.example.ai;
 
 import io.micrometer.observation.ObservationRegistry;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration;
 import org.springframework.ai.ollama.OllamaEmbeddingModel;
 import org.springframework.ai.ollama.api.OllamaApi;
@@ -30,6 +31,7 @@ import org.springframework.context.annotation.Primary;
  *应该也不用scanBasePackages扫包
  * @Primary 告诉 Spring：有歧义时优先用 ollamaEmbeddingModel
  */
+@Slf4j
 @SpringBootApplication(exclude = {OpenAiEmbeddingAutoConfiguration.class},
         scanBasePackages = "com.example.ai")
 public class SpringAiDemoApplication {
@@ -41,7 +43,7 @@ public class SpringAiDemoApplication {
     @Primary   // 有多个 EmbeddingModel 时，PgVectorStore 自动配置优先用这个
     @Bean
     public OllamaEmbeddingModel ollamaEmbeddingModel() {
-        System.out.println("【Bean初始化】创建 Ollama EmbeddingModel（nomic-embed-text）...");
+        log.info("【Bean初始化】创建 Ollama EmbeddingModel（nomic-embed-text）...");
 
         OllamaApi ollamaApi = OllamaApi.builder().build();
 
@@ -55,10 +57,10 @@ public class SpringAiDemoApplication {
         // 启动时测试连通性
         try {
             float[] result = embeddingModel.embed("连通测试");
-            System.out.println("【Bean初始化】✅ Ollama Embedding 连通！向量维度=" + result.length);
+            log.info("【Bean初始化】✅ Ollama Embedding 连通！向量维度=" + result.length);
         } catch (Exception e) {
-            System.out.println("【Bean初始化】❌ Ollama Embedding 失败：" + e.getMessage());
-            System.out.println("【Bean初始化】请确认：1) ollama 服务已启动  2) 已执行 ollama pull nomic-embed-text");
+            log.info("【Bean初始化】❌ Ollama Embedding 失败：" + e.getMessage());
+            log.info("【Bean初始化】请确认：1) ollama 服务已启动  2) 已执行 ollama pull nomic-embed-text");
             e.printStackTrace();
         }
 
