@@ -102,7 +102,12 @@
             <version>1.18.34</version>
             <scope>provided</scope>
         </dependency>
-
+<!--        Redis ChatMemory：手写实现 ChatMemoryRepository 接口（见选型记录）-->
+<!--        spring data redis 基础依赖-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
 
     </dependencies>
 

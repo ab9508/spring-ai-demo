@@ -13,6 +13,13 @@ spring:
     username: postgres
     password: 123456          # 和 docker-compose 中的一致
     driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+
   ai:
     vectorstore:
       pgvector:
@@ -30,3 +37,4 @@ spring:
 
   # Embedding：Ollama 本地（在 SpringAiDemoApplication 中手动创建 Bean，不走 yml 配置）
   # 确保本地已执行：ollama pull nomic-embed-text && ollama serve
+  # Redis ChatMemory：手写 RedisChatMemoryRepository 实现（见 config 包），key 前缀 chat:memory:{conversationId}
