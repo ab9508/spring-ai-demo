@@ -57,6 +57,10 @@ public class AgentController {
     @GetMapping("/chat")
     public String chat(@RequestParam(defaultValue = "default") String conversationId,
                        @RequestParam String message) {
+        // T1: 请求进入
+        long t1 = System.currentTimeMillis();
+        log.info("【T1】请求进入 conversationId={}, message={}", conversationId, message);
+
         // RAG 检索：从向量数据库查找相关文档
         List<Document> documents = vectorStore.similaritySearch(
                 SearchRequest.builder()
@@ -64,7 +68,8 @@ public class AgentController {
                         .topK(1)
                         .build()
         );// 查询结果可能为空
-        log.info("【agent】检索到{}个相关片段", documents.size());
+        long t2 = System.currentTimeMillis();
+        log.info("【T2】RAG检索完成 耗时{}ms 检索到{}个片段", t2 - t1, documents.size());
         String context = documents.stream().map(Document::getText)
                 .collect(Collectors.joining("\n\n--\n\n"));
 
@@ -80,7 +85,16 @@ public class AgentController {
                 .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, finalConversationId))  // 传入会话ID
                 .call()
                 .content();
+        long t3 = System.currentTimeMillis();
+        log.info("【T3】ChatClient.call()完成 耗时{}ms (含DeepSeek调用+ChatMemory读写)", t3 - t2);
+
         log.info("【agent】回复==》{}", content);
+
+        // T4: 方法结束
+        long t4 = System.currentTimeMillis();
+        log.info("【T4】请求完成 总耗时{}ms (T1→T2: RAG {}ms | T2→T3: LLM {}ms | T3→T4: 序列化 {}ms)",
+                t4 - t1, t2 - t1, t3 - t2, t4 - t3);
+
         return content;
     }
 }

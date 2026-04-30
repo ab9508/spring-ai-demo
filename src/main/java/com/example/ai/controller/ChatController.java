@@ -28,12 +28,16 @@ public class ChatController {
      */
     @GetMapping("/chat")
     public String chat(@RequestParam String message) {
-        log.info("【chat】message==>" + message);
+        long t1 = System.currentTimeMillis();
+        log.info("【T1】chat请求进入 message={}", message);
+
         String content = chatClient.prompt()
                 .user(message)
                 .call()
                 .content();
-        log.info("【chat】return==>" + content);
+
+        long t2 = System.currentTimeMillis();
+        log.info("【T2】chat请求完成 耗时{}ms 回复==》{}", t2 - t1, content);
         return content;
     }
 
@@ -42,13 +46,17 @@ public class ChatController {
      */
     @GetMapping("/chat/role")
     public String chatWithRole(@RequestParam String message) {
-        log.info("【chat role】message==>" + message);
+        long t1 = System.currentTimeMillis();
+        log.info("【T1】chatRole请求进入 message={}", message);
+
         String content = chatClient.prompt()
                 .system("你是一个专业的Java技术顾问，回答要简洁、准确、有技术深度。")
                 .user(message)
                 .call()
                 .content();
-        log.info("【chat role】return==>" + content);
+
+        long t2 = System.currentTimeMillis();
+        log.info("【T2】chatRole请求完成 耗时{}ms 回复==》{}", t2 - t1, content);
         return content;
     }
 }

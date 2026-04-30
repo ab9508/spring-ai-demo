@@ -48,8 +48,11 @@ public class RagController {
      */
     @PostMapping("/upload")
     public String upload(@RequestParam("file") MultipartFile file) throws Exception {
+        long t1 = System.currentTimeMillis();
+        log.info("【T1】文档上传开始 filename={}", file.getOriginalFilename());
         String result = ragService.uploadDocument(file);
-        log.info("【upload】" + result);
+        long t2 = System.currentTimeMillis();
+        log.info("【T2】文档上传完成 耗时{}ms result={}", t2 - t1, result);
         return result;
     }
 
@@ -65,6 +68,9 @@ public class RagController {
      */
     @GetMapping("/ask")
     public String ask(@RequestParam String question) {
+        long t1 = System.currentTimeMillis();
+        log.info("【T1】rag/ask请求进入 question={}", question);
+
         // ① 向量检索：找最相关的 5 个文档片段
         //    这里内部会调智谱AI的embedding-3把question转成向量
         List<Document> relevantDocs = vectorStore.similaritySearch(
@@ -73,7 +79,8 @@ public class RagController {
                         .topK(5)
                         .build()
         );
-        log.info("【ask】检索到 " + relevantDocs.size() + " 个相关片段");
+        long t2 = System.currentTimeMillis();
+        log.info("【T2】RAG向量检索完成 耗时{}ms 检索到{}个片段", t2 - t1, relevantDocs.size());
 
         // ② 拼装上下文
         String context = relevantDocs.stream()
@@ -89,7 +96,9 @@ public class RagController {
                 .user(question)
                 .call()
                 .content();
-        log.info("【ask】回答内容==》" + content);
+        long t3 = System.currentTimeMillis();
+        log.info("【T3】rag/ask请求完成 总耗时{}ms (RAG检索:{}ms | DeepSeek生成:{}ms)",
+                t3 - t1, t2 - t1, t3 - t2);
         return content;
     }
 }
