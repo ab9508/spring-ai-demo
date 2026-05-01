@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
  * GET  /rag/ask     - 基于向量库内容回答问题
  *
  * ============ 一次 ask 请求中两个 AI 的分工 ============
- * ① vectorStore.similaritySearch() → 内部调 智谱AI Embedding → 把问题转向量 → 检索相关片段
+ * ① vectorStore.similaritySearch() → 内部调 Ollama nomic-embed-text → 把问题转向量 → 检索相关片段
  * ② chatClient.prompt().call()     → 内部调 DeepSeek Chat    → 基于检索结果生成回答
  */
 @Slf4j
@@ -62,7 +62,7 @@ public class RagController {
      *
      * 流程：
      * ① 用户提问
-     * ② vectorStore.similaritySearch → 智谱AI把问题转向量 → 找最相关的文档片段
+     * ② vectorStore.similaritySearch → Ollama nomic-embed-text 把问题转向量 → 找最相关的文档片段
      * ③ 把片段拼成上下文
      * ④ chatClient → DeepSeek 基于上下文生成最终回答
      */
@@ -71,12 +71,13 @@ public class RagController {
         long t1 = System.currentTimeMillis();
         log.info("【T1】rag/ask请求进入 question={}", question);
 
-        // ① 向量检索：找最相关的 5 个文档片段
-        //    这里内部会调智谱AI的embedding-3把question转成向量
+        // ① 向量检索：找最相关的 3 个文档片段
+        //    similarityThreshold=0.3: 过滤低分结果，提高检索质量
         List<Document> relevantDocs = vectorStore.similaritySearch(
                 SearchRequest.builder()
                         .query(question)
-                        .topK(5)
+                        .topK(3)
+                        .similarityThreshold(0.3)
                         .build()
         );
         long t2 = System.currentTimeMillis();
@@ -97,6 +98,7 @@ public class RagController {
                 .call()
                 .content();
         long t3 = System.currentTimeMillis();
+        log.info("【ask】回复==》{}", content);
         log.info("【T3】rag/ask请求完成 总耗时{}ms (RAG检索:{}ms | DeepSeek生成:{}ms)",
                 t3 - t1, t2 - t1, t3 - t2);
         return content;

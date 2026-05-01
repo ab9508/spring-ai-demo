@@ -21,17 +21,15 @@ import java.util.List;
  *
  * 离线阶段（本类 uploadDocument）：
  *   PDF文件 → PagePdfDocumentReader按页读取 → TokenTextSplitter分段
- *   → EmbeddingModel文本转向量(智谱AI) → VectorStore存储到内存
+ *   → EmbeddingModel文本转向量(Ollama nomic-embed-text) → PgVectorStore存储到PostgreSQL
  *
  * 在线阶段（RagController.ask 调用 vectorStore.similaritySearch）：
- *   用户问题 → EmbeddingModel转向量(智谱AI) → VectorStore相似度检索
+ *   用户问题 → EmbeddingModel转向量(Ollama nomic-embed-text) → PgVectorStore相似度检索
  *   → 拼装上下文 → ChatClient生成回答(DeepSeek)
  *
- * ============ 向量数据存在哪？ ============
- * SimpleVectorStore 是内存存储，数据在 JVM 堆内存中。
- * 重启应用 → 数据清空，需要重新 upload PDF。
- * 验证方式：upload 后调 /rag/ask，能回答就说明数据在内存中。
- * 如果想持久化，可以调用 SimpleVectorStore.save(file) 保存到本地 JSON 文件。
+ * ============ 数据持久化 ============
+ * 向量数据存储在 PostgreSQL + pgvector 扩展，应用重启后数据不丢失。
+ * 无需重新 upload PDF。
  */
 @Slf4j
 @Service
@@ -85,12 +83,17 @@ public class RagService {
             List<Document> documents = reader.get();
             log.info("【upload】PDF解析完成，共 " + documents.size() + " 页");
 
-            // 4. 文本分段（按 Token 切分）
-            TokenTextSplitter splitter = new TokenTextSplitter();
+            // 4. 文本分段（按 Token 切分）英文：1 Token ≈ 0.7-0.8 个单词 中文：1 Token ≈ 1-2 个汉字
+            // 参数：chunkSize=500, minChunkSizeChars=100, minChunkLengthToEmbed=50, maxNumChunks=10000, keepSeparator=true
+            // chunkSize=500: 每段最大500 token，适合中文文档（默认800对中文太大）
+            // minChunkSizeChars=100: 最小100字符，避免切出无意义的短片段
+            // maxNumChunks=10000: 最大分块数（防止超长文档切出过多块）
+            // keepSeparator=true: 保留分隔符（如换行符、标点、段落标记）
+            TokenTextSplitter splitter = new TokenTextSplitter(500, 100, 50, 10000, true);
             List<Document> chunks = splitter.apply(documents);
             log.info("【upload】分段完成，共 " + chunks.size() + " 个片段");
 
-            // 5. 向量化并存储（内部调智谱AI embedding-3，文本→向量→内存）
+            // 5. 向量化并存储（内部调 Ollama nomic-embed-text，文本→向量→PostgreSQL）
             vectorStore.add(chunks);
 
             String result = "文档处理完成，共 " + chunks.size() + " 个文档片段已入库";

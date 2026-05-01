@@ -64,7 +64,8 @@ public class RedisChatMemoryRepository implements ChatMemoryRepository {
             log.info("【查询会话】key:{},历史对话为空", key);
             return Collections.emptyList();
         }
-        log.info("【查询会话】key:{},历史对话数量:{},内容:{}", key, jsonList.size(), jsonList);
+        log.info("【查询会话】key:{},历史对话数量:{}", key, jsonList.size());
+//        log.info("【查询会话】key:{},历史对话数量:{},内容:{}", key, jsonList.size(), jsonList);
 
         List<Message> messages = new ArrayList<>();
         for (String json : jsonList) {
@@ -82,7 +83,8 @@ public class RedisChatMemoryRepository implements ChatMemoryRepository {
 
     @Override
     public void saveAll(String conversationId, List<Message> messages) {
-        log.info("【保存会话记忆】conversationId:{},消息数量:{},messages:{}", conversationId, messages.size(), messages);
+        log.info("【保存会话记忆】conversationId:{},消息数量:{}", conversationId, messages.size());
+//        log.info("【保存会话记忆】conversationId:{},消息数量:{},messages:{}", conversationId, messages.size(), messages);
         if (messages == null || messages.isEmpty()) {
             return;
         }
@@ -106,7 +108,7 @@ public class RedisChatMemoryRepository implements ChatMemoryRepository {
             redisTemplate.opsForList().rightPushAll(key, jsonList);
         }
 
-        log.debug("【保存会话记忆】key:{} 的 {} 条消息,内容:{}", conversationId, messages.size(), messages);
+        log.debug("【保存会话记忆】key:{} 的 {} 条消息", conversationId, messages.size());
     }
 
     @Override

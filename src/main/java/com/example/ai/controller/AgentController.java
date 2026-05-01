@@ -24,8 +24,8 @@ import java.util.stream.Collectors;
  * <p>
  * 1. ChatMemory（MessageWindowChatMemory）维护一个消息窗口，默认保留最近 20 条消息
  * 2. MessageChatMemoryAdvisor 是 ChatClient 的拦截器：
- *    - 请求前：从 ChatMemory 加载历史消息，注入到 prompt
- *    - 响应后：把本次用户消息和 AI 回复保存到 ChatMemory
+ * - 请求前：从 ChatMemory 加载历史消息，注入到 prompt
+ * - 响应后：把本次用户消息和 AI 回复保存到 ChatMemory
  * 3. 通过 CONVERSATION_ID 区分不同用户的对话
  * <p>
  * ============ 调用流程 ============
@@ -62,10 +62,13 @@ public class AgentController {
         log.info("【T1】请求进入 conversationId={}, message={}", conversationId, message);
 
         // RAG 检索：从向量数据库查找相关文档
+        // topK=3: 返回最相似的3个片段，给AI更多上下文
+        // similarityThreshold=0.3: 过滤掉相似度低于0.3的低质量结果，减少噪声
         List<Document> documents = vectorStore.similaritySearch(
                 SearchRequest.builder()
                         .query(message)
-                        .topK(1)
+                        .topK(3)
+                        .similarityThreshold(0.3)
                         .build()
         );// 查询结果可能为空
         long t2 = System.currentTimeMillis();
@@ -77,10 +80,7 @@ public class AgentController {
         String finalConversationId = conversationId;
 
         String content = chatClient.prompt()
-                .system("你是一个电商智能客服助手。" +
-                        "你可以帮助用户查询订单状态、推荐商品、处理售后问题。" +
-                        "当用户提到订单号或订单相关问题时，使用工具查询订单信息后再回答。" +
-                        "参考资料：\n" + context)
+                .system(buildSystemPrompt(context))
                 .user(message)
                 .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, finalConversationId))  // 传入会话ID
                 .call()
@@ -96,5 +96,23 @@ public class AgentController {
                 t4 - t1, t2 - t1, t3 - t2, t4 - t3);
 
         return content;
+    }
+
+    /**
+     * 动态构建 System Prompt
+     * 有检索结果时带上参考资料，无检索结果时不带（避免 AI 基于空上下文幻觉）
+     */
+    private String buildSystemPrompt(String context) {
+        String basePrompt = "你是一个电商智能客服助手。" +
+                "你可以帮助用户查询订单状态、推荐商品、处理售后问题。" +
+                "当用户提到订单号或订单相关问题时，使用工具查询订单信息后再回答。";
+
+        if (context != null && !context.isBlank()) {
+            basePrompt += "\n\n参考资料（仅作辅助，如果与工具查询结果冲突，以工具结果为准）：\n" + context;
+        } else {
+            basePrompt += "\n\n没有找到相关的参考资料，请仅基于工具查询结果或通用知识回答。";
+        }
+        log.info("【agent】系统提示语=>{}", basePrompt);
+        return basePrompt;
     }
 }
