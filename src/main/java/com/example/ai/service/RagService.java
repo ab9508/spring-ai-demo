@@ -126,10 +126,11 @@ public class RagService {
                         .similarityThreshold(0.3)
                         .build()
         );
-        log.info("知识库返回数量:{}", documents.size());
         if (CollectionUtils.isEmpty(documents)) {
+            log.info("【rag过滤】知识库返回为空");
             return Collections.emptyList();
         }
+        log.info("知识库返回数量:{},分数:{}", documents.size(), documents.stream().map(Document::getScore).toList());
         double top1Score = documents.get(0).getScore() != null ? documents.get(0).getScore() : 0.0;
         if (top1Score < 0.45) {
             log.info("【rag过滤】top1分数{}过低，返回空结果", top1Score);

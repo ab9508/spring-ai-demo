@@ -1,14 +1,16 @@
 package com.example.ai.controller;
 
+import com.example.ai.entity.IntentRecord;
+import com.example.ai.service.RagService;
 import com.example.ai.tool.OrderTools;
-import jakarta.annotation.Resource;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -18,7 +20,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Tool Calling 智能体控制器（含多轮对话记忆）
+ *
+ * Tool Calling 智能体控制器（含多轮对话记忆 + 结构化输出）
  * <p>
  * ============ ChatMemory 实现原理 ============
  * <p>
@@ -38,70 +41,162 @@ import java.util.stream.Collectors;
 @RequestMapping("/agent")
 public class AgentController {
 
-    private final ChatClient chatClient;
-    @Resource
-    private VectorStore vectorStore;
+    private final ChatClient chatClient;          // 带工具+记忆的（用于 /chat）
+    private final ChatClient jsonOnlyClient;       // 纯净的（用于 /analyzeIntent）
+    @Autowired
+    private RagService ragService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // 注入 OrderTools 实例 + ChatMemory
-    public AgentController(ChatClient.Builder chatClientBuilder, OrderTools orderTools, ChatMemory chatMemory) {
+    // 注入 OrderTools 实例 + ChatMemory + ChatModel
+    public AgentController(ChatClient.Builder chatClientBuilder,
+                          OrderTools orderTools,
+                          ChatMemory chatMemory,
+                          ChatModel chatModel) {
         log.info("当前使用的 ChatMemory 实现类：" + chatMemory.getClass().getName());
+
+        // jsonOnlyClient：用 ChatModel 创建全新 builder，完全不受下面工具配置的影响
+        // ChatClient.builder(chatModel) 每次返回全新的 Builder，无任何历史配置
+        this.jsonOnlyClient = ChatClient.builder(chatModel).build();
+        log.info("【agent】jsonOnlyClient 初始化完成（无工具/无记忆，专用于结构化输出）");
+
+        // chatClient：带 Tool Calling + ChatMemory（用于 /agent/chat）
         this.chatClient = chatClientBuilder
-                .defaultTools(orderTools)   // 传实例，Spring AI 自动扫描其 @Tool 方法
+                .defaultTools(orderTools)
                 .defaultAdvisors(
-                        MessageChatMemoryAdvisor.builder(chatMemory).build()  // Builder 模式构造
+                        MessageChatMemoryAdvisor.builder(chatMemory).build()
                 )
                 .build();
-        log.info("【agent】ChatClient 初始化完成，已挂载 ChatMemory");
+        log.info("【agent】ChatClient 初始化完成，已挂载 ChatMemory + OrderTools");
     }
 
     @GetMapping("/chat")
     public String chat(@RequestParam(defaultValue = "default") String conversationId,
                        @RequestParam String message) {
-        // T1: 请求进入
         long t1 = System.currentTimeMillis();
         log.info("【T1】请求进入 conversationId={}, message={}", conversationId, message);
 
         // RAG 检索：从向量数据库查找相关文档
         // topK=3: 返回最相似的3个片段，给AI更多上下文
         // similarityThreshold=0.3: 过滤掉相似度低于0.3的低质量结果，减少噪声
-        List<Document> documents = vectorStore.similaritySearch(
-                SearchRequest.builder()
-                        .query(message)
-                        .topK(3)
-                        .similarityThreshold(0.5)
-                        .build()
-        );// 查询结果可能为空
+        List<Document> documents = ragService.filterByRelativeScore(message);
         long t2 = System.currentTimeMillis();
         log.info("【T2】RAG检索完成 耗时{}ms 检索到{}个片段", t2 - t1, documents.size());
+
         String context = documents.stream().map(Document::getText)
                 .collect(Collectors.joining("\n\n--\n\n"));
-
-        // 使用前端的 conversationId，如果没传就用 "default"
-        String finalConversationId = conversationId;
 
         String content = chatClient.prompt()
                 .system(buildSystemPrompt(context))
                 .user(message)
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, finalConversationId))  // 传入会话ID
+                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
                 .call()
                 .content();
+
         long t3 = System.currentTimeMillis();
         log.info("【T3】ChatClient.call()完成 耗时{}ms (含DeepSeek调用+ChatMemory读写)", t3 - t2);
 
         log.info("【agent】回复==》{}", content);
 
-        // T4: 方法结束
         long t4 = System.currentTimeMillis();
-        log.info("【T4】请求完成 总耗时{}ms (T1→T2: RAG {}ms | T2→T3: LLM {}ms | T3→T4: 序列化 {}ms)",
+        log.info("【T4】请求完成 总耗时{}ms (RAG:{}ms | LLM:{}ms | 序列化:{}ms)",
                 t4 - t1, t2 - t1, t3 - t2, t4 - t3);
-
         return content;
     }
 
     /**
-     * 动态构建 System Prompt
-     * 有检索结果时带上参考资料，无检索结果时不带（避免 AI 基于空上下文幻觉）
+     * 结构化输出演示：意图识别
+     * <p>
+     * Spring AI 1.0.5 没有 entity(Class) 这个 API，
+     * 所以让 LLM 返回 JSON 字符串，再用 Jackson 手动反序列化。
+     * 这是最稳妥的方案，不依赖 Spring AI 内部结构。
+     *
+     * 	LLM: Large Language Model，大语言模型。本项目用的是 DeepSeek-V3（通过 API 调用），本质是一个概率模型，根据输入文本预测下一个 token
      */
+    @GetMapping("/analyzeIntent")
+    public IntentRecord analyzeIntent(@RequestParam String message) {
+        log.info("【结构化输出】analyzeIntent 请求进入 message={}", message);
+
+        // === 关键：使用 jsonOnlyClient（无工具/无记忆），避免 DeepSeek 调用 OrderTools ===
+        // 如果用 chatClient，DeepSeek 看到 OrderTools 会直接查订单并返回完整回复，而不是 JSON
+
+        String systemPrompt = """
+                你是电商客服系统的意图识别模块，你的唯一职责是识别用户意图并返回 JSON。
+                
+                严格按以下 JSON 格式返回，不要添加任何其他文字、解释或格式：
+                {"intent":"意图类型","params":"参数或null","confidence":置信度数字,"userMessage":"原始消息"}
+                
+                字段说明：
+                - intent: 必填，可选值 query_order / query_stock / after_sale / rag_query / unknown
+                - params: 提取到的参数（如订单号），JSON字符串格式，没有则为 null
+                - confidence: 0到1之间的数字
+                - userMessage: 原样返回用户消息
+                
+                禁止事项：
+                1. 禁止调用任何工具
+                2. 禁止查询订单
+                3. 禁止回答用户问题
+                4. 只返回JSON，不要用markdown代码块包裹
+                """;
+
+        String jsonResponse = jsonOnlyClient.prompt()
+                .system(systemPrompt)
+                .user(message)
+                .call()
+                .content();
+
+        log.info("【结构化输出】LLM 原始返回: {}", jsonResponse);
+
+        try {
+            String cleaned = cleanJsonResponse(jsonResponse);
+            log.info("【结构化输出】清洗后: {}", cleaned);
+            return objectMapper.readValue(cleaned, IntentRecord.class);
+        } catch (Exception e) {
+            log.error("【结构化输出】解析失败，原始返回: {}", jsonResponse, e);
+            return new IntentRecord("unknown", null, 0.0, message);
+        }
+    }
+
+    /**
+     * 清洗 DeepSeek 返回的 JSON 文本
+     * <p>
+     * DeepSeek 常见不可控格式：
+     * 1. 正常 JSON: {"intent":"..."}
+     * 2. markdown 代码块: ```json\n{"intent":"..."}\n```
+     * 3. 带前后文: "以下是结果：\n```json\n{...}\n```\n希望对你有帮助"
+     * 4. 纯文本包裹: "结果为：{\"intent\":\"...\"}"
+     */
+    private String cleanJsonResponse(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalArgumentException("LLM 返回为空");
+        }
+
+        String text = raw.trim();
+
+        // 去掉 markdown 代码块标记（```json 或 ``` 等）
+        if (text.startsWith("```")) {
+            // 去掉第一行的 ```json
+            int firstNewline = text.indexOf('\n');
+            if (firstNewline > 0) {
+                text = text.substring(firstNewline + 1);
+            }
+            // 去掉结尾的 ```
+            if (text.endsWith("```")) {
+                text = text.substring(0, text.length() - 3).trim();
+            }
+        }
+
+        // 兜底：提取第一个 { 到最后一个 } 之间的内容
+        int firstBrace = text.indexOf('{');
+        int lastBrace = text.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+            text = text.substring(firstBrace, lastBrace + 1);
+        } else {
+            throw new IllegalArgumentException("未找到 JSON 对象: " + raw);
+        }
+
+        return text;
+    }
+
     private String buildSystemPrompt(String context) {
         String basePrompt = "你是一个电商智能客服助手。" +
                 "你可以帮助用户查询订单状态、推荐商品、处理售后问题。" +
