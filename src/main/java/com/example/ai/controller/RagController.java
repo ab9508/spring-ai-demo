@@ -1,5 +1,6 @@
 package com.example.ai.controller;
 
+import com.example.ai.service.RagService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
@@ -9,18 +10,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.example.ai.service.RagService;
-
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
  * RAG（检索增强生成）接口
- *
+ * <p>
  * ============ 提供两个接口 ============
  * POST /rag/upload  - 上传 PDF，解析后存入向量库
  * GET  /rag/ask     - 基于向量库内容回答问题
- *
+ * <p>
  * ============ 一次 ask 请求中两个 AI 的分工 ============
  * ① vectorStore.similaritySearch() → 内部调 Ollama nomic-embed-text → 把问题转向量 → 检索相关片段
  * ② chatClient.prompt().call()     → 内部调 DeepSeek Chat    → 基于检索结果生成回答
@@ -59,7 +58,7 @@ public class RagController {
     /**
      * RAG 问答
      * GET http://localhost:8080/rag/ask?question=你的问题
-     *
+     * <p>
      * 流程：
      * ① 用户提问
      * ② vectorStore.similaritySearch → Ollama nomic-embed-text 把问题转向量 → 找最相关的文档片段
@@ -77,7 +76,7 @@ public class RagController {
                 SearchRequest.builder()
                         .query(question)
                         .topK(3)
-                        .similarityThreshold(0.3)
+                        .similarityThreshold(0.5)
                         .build()
         );
         long t2 = System.currentTimeMillis();
@@ -102,5 +101,17 @@ public class RagController {
         log.info("【T3】rag/ask请求完成 总耗时{}ms (RAG检索:{}ms | DeepSeek生成:{}ms)",
                 t3 - t1, t2 - t1, t3 - t2);
         return content;
+    }
+
+
+    /**
+     * 获取知识库数据
+     *
+     * @param question
+     * @return
+     */
+    @GetMapping("/getDocument")
+    public List<Document> getDocument(@RequestParam String question) {
+        return ragService.filterByRelativeScore(question);
     }
 }

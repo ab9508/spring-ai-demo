@@ -68,7 +68,7 @@ public class AgentController {
                 SearchRequest.builder()
                         .query(message)
                         .topK(3)
-                        .similarityThreshold(0.3)
+                        .similarityThreshold(0.5)
                         .build()
         );// 查询结果可能为空
         long t2 = System.currentTimeMillis();
