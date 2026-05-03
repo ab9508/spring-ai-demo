@@ -1,11 +1,11 @@
 package com.example.ai.service;
 
+import com.example.ai.transformer.OverlappingTextSplitter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.document.DocumentReader;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
-import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.core.io.FileSystemResource;
@@ -114,13 +114,12 @@ public class RagService {
             documents.stream().limit(3).forEach(doc ->
                     log.info("【upload】文档块预览: {}", doc.getText().substring(0, Math.min(100, doc.getText().length()))));
 
-            // 5. 文本分段（TokenTextSplitter）
+            // 5. 文本分段（OverlappingTextSplitter，带重叠避免语义丢失）
             //    chunkSize=500: 每段最大500 token，适合中文文档
-            //    minChunkSizeChars=50: 最小50字符，避免无意义短片段
-            //    minChunkLengthToEmbed=30: 最小可嵌入长度
-            //    maxNumChunks=10000: 最大分块数
-            //    keepSeparator=true: 保留分隔符
-            TokenTextSplitter splitter = new TokenTextSplitter(500, 50, 30, 10000, true);
+            //    overlap=10%: 相邻切片重叠50 token，保证边界语义连续
+            //    两层切片法：先用 TokenTextSplitter 粗切（保语义边界），
+            //    再滑动窗口细切+重叠（保证检索质量）
+            OverlappingTextSplitter splitter = new OverlappingTextSplitter(50, 0.10);
             List<Document> chunks = splitter.apply(documents);
             log.info("【upload】分段完成，共 {} 个片段", chunks.size());
 
