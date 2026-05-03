@@ -7,18 +7,27 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
  * RAG（检索增强生成）接口
  * <p>
- * ============ 提供两个接口 ============
- * POST /rag/upload  - 上传 PDF，解析后存入向量库
- * GET  /rag/ask     - 基于向量库内容回答问题
+ * ============ 提供的接口 ============
+ * POST /rag/upload     - 上传文档（支持 PDF/Word/Excel/PPT/TXT 等多格式）
+ * GET  /rag/ask        - 基于向量库内容回答问题
+ * GET  /rag/formats    - 查询支持的文件格式
+ * GET  /rag/getDocument - 获取知识库检索结果（调试用）
+ * <p>
+ * ============ 文档格式支持 ============
+ * - PDF：PagePdfDocumentReader（按页读取，中文排版保留好）
+ * - Word/Excel/PPT/TXT/HTML 等：TikaDocumentReader（Apache Tika 通用解析）
  * <p>
  * ============ 一次 ask 请求中两个 AI 的分工 ============
  * ① vectorStore.similaritySearch() → 内部调 Ollama nomic-embed-text → 把问题转向量 → 检索相关片段
@@ -30,8 +39,8 @@ import java.util.stream.Collectors;
 public class RagController {
 
     private final ChatClient chatClient;      // 对话（DeepSeek）
-    private final VectorStore vectorStore;    // 向量检索（底层用智谱AI Embedding）
-    private final RagService ragService;       // PDF处理服务
+    private final VectorStore vectorStore;    // 向量检索（底层用 Ollama nomic-embed-text）
+    private final RagService ragService;      // 文档处理服务
 
     public RagController(ChatClient.Builder chatClientBuilder, VectorStore vectorStore,
                          @Autowired RagService ragService) {
@@ -41,14 +50,30 @@ public class RagController {
     }
 
     /**
-     * 上传文档
-     * POST http://localhost:8080/rag/upload
-     * form-data: file=xxx.pdf
+     * 查询支持的文件格式
+     * GET http://localhost:8080/rag/formats
      */
-    @PostMapping("/upload")
+    @GetMapping("/formats")
+    public Map<String, Object> supportedFormats() {
+        Map<String, Object> result = new HashMap<>();
+        result.put("supportedFormats", RagService.getSupportedFormats());
+        result.put("total", RagService.getSupportedFormats().size());
+        result.put("pdfReader", "PagePdfDocumentReader（按页读取，中文排版保留好）");
+        result.put("otherReader", "TikaDocumentReader（Apache Tika 通用解析）");
+        return result;
+    }
+
+    /**
+     * 上传文档（支持多格式）
+     * POST http://localhost:8080/rag/upload
+     * form-data: file=xxx.pdf / file=xxx.docx / file=xxx.txt
+     * <p>
+     * 支持：pdf, doc, docx, xls, xlsx, ppt, pptx, txt, html, htm, md, csv, json, xml
+     */
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public String upload(@RequestParam("file") MultipartFile file) throws Exception {
         long t1 = System.currentTimeMillis();
-        log.info("【T1】文档上传开始 filename={}", file.getOriginalFilename());
+        log.info("【T1】文档上传开始 filename={} size={}", file.getOriginalFilename(), file.getSize());
         String result = ragService.uploadDocument(file);
         long t2 = System.currentTimeMillis();
         log.info("【T2】文档上传完成 耗时{}ms result={}", t2 - t1, result);
@@ -71,7 +96,7 @@ public class RagController {
         log.info("【T1】rag/ask请求进入 question={}", question);
 
         // ① 向量检索：找最相关的 3 个文档片段
-        //    similarityThreshold=0.3: 过滤低分结果，提高检索质量
+        //    similarityThreshold=0.3: 过滤低分结果，需要提高检索质量
         List<Document> relevantDocs = vectorStore.similaritySearch(
                 SearchRequest.builder()
                         .query(question)
@@ -103,12 +128,8 @@ public class RagController {
         return content;
     }
 
-
     /**
-     * 获取知识库数据
-     *
-     * @param question
-     * @return
+     * 获取知识库检索结果（调试用，含相对分数过滤）
      */
     @GetMapping("/getDocument")
     public List<Document> getDocument(@RequestParam String question) {

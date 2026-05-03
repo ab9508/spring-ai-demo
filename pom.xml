@@ -67,6 +67,13 @@
             <artifactId>spring-ai-pdf-document-reader</artifactId>
         </dependency>
 
+        <!-- Tika 文档读取：支持 Word/Excel/PPT/TXT/HTML 等多种格式 -->
+        <!-- 基于 Apache Tika，统一接口读取各种办公文档格式 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-tika-document-reader</artifactId>
+        </dependency>
+
         <!-- Ollama 核心模型（仅用于 Embedding，不用 starter 避免自动配置 OllamaChatModel 冲突） -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
