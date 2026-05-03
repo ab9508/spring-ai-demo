@@ -139,7 +139,14 @@ public class OverlappingTextSplitter implements DocumentTransformer {
         int chunkSizeChars = chunkSizeInTokens * CHARS_PER_TOKEN;
         int overlapChars = overlapInTokens * CHARS_PER_TOKEN;
 
-        // 文本小于一个 chunk，直接返回
+        // FIXME: 两层切片法的 overlap 漏洞
+        // 问题：如果粗切块（coarseChunk）本身 < chunkSizeChars，
+        //       直接返回整个粗切块，不与前后块产生 overlap。
+        // 后果：粗切块之间的边界处仍然可能丢失语义。
+        // 后续改进方向：
+        //   1. 即使粗切块 < chunkSizeChars，也在追加时与前一个 fineChunk 做尾部 overlap
+        //   2. 或者在第一层粗切时也引入 overlap（修改 TokenTextSplitter 参数或自定义粗切）
+        // 当前行为：overlap 只在同一个粗切块内的细切窗口之间生效。
         if (text.length() <= chunkSizeChars) {
             return List.of(new Document(text, metadata));
         }
