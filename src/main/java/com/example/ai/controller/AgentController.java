@@ -1,7 +1,7 @@
 package com.example.ai.controller;
 
+import com.example.ai.advisor.CustomRagAdvisor;
 import com.example.ai.entity.IntentRecord;
-import com.example.ai.service.RagService;
 import com.example.ai.tool.OrderTools;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -10,7 +10,7 @@ import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.document.Document;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -41,17 +41,16 @@ import java.util.stream.Collectors;
 @RequestMapping("/agent")
 public class AgentController {
 
-    private final ChatClient chatClient;          // 带工具+记忆的（用于 /chat）
+    private final ChatClient chatClient;          // 带工具+记忆+RAG的（用于 /chat）
     private final ChatClient jsonOnlyClient;       // 纯净的（用于 /analyzeIntent）
-    @Autowired
-    private RagService ragService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // 注入 OrderTools 实例 + ChatMemory + ChatModel
+    // 注入 OrderTools 实例 + ChatMemory + ChatModel + VectorStore
     public AgentController(ChatClient.Builder chatClientBuilder,
                           OrderTools orderTools,
                           ChatMemory chatMemory,
-                          ChatModel chatModel) {
+                          ChatModel chatModel,
+                          VectorStore vectorStore) {
         log.info("当前使用的 ChatMemory 实现类：" + chatMemory.getClass().getName());
 
         // jsonOnlyClient：用 ChatModel 创建全新 builder，完全不受下面工具配置的影响
@@ -59,14 +58,17 @@ public class AgentController {
         this.jsonOnlyClient = ChatClient.builder(chatModel).build();
         log.info("【agent】jsonOnlyClient 初始化完成（无工具/无记忆，专用于结构化输出）");
 
-        // chatClient：带 Tool Calling + ChatMemory（用于 /agent/chat）
+        // chatClient：带 Tool Calling + ChatMemory + 自定义 RAG Advisor
         this.chatClient = chatClientBuilder
                 .defaultTools(orderTools)
                 .defaultAdvisors(
+                        // advisor执行顺序受order影响，与代码先后无关
+                        // 自定义 RAG Advisor：自动检索向量库并注入上下文（含相对分数过滤）
+                        new CustomRagAdvisor(vectorStore, 3, 0.3),
                         MessageChatMemoryAdvisor.builder(chatMemory).build()
-                )
+                        )
                 .build();
-        log.info("【agent】ChatClient 初始化完成，已挂载 ChatMemory + OrderTools");
+        log.info("【agent】ChatClient 初始化完成，已挂载 ChatMemory + OrderTools + 自定义RAG Advisor");
     }
 
     @GetMapping("/chat")
@@ -75,31 +77,22 @@ public class AgentController {
         long t1 = System.currentTimeMillis();
         log.info("【T1】请求进入 conversationId={}, message={}", conversationId, message);
 
-        // RAG 检索：从向量数据库查找相关文档
-        // topK=3: 返回最相似的3个片段，给AI更多上下文
-        // similarityThreshold=0.3: 过滤掉相似度低于0.3的低质量结果，减少噪声
-        List<Document> documents = ragService.filterByRelativeScore(message);
-        long t2 = System.currentTimeMillis();
-        log.info("【T2】RAG检索完成 耗时{}ms 检索到{}个片段", t2 - t1, documents.size());
-
-        String context = documents.stream().map(Document::getText)
-                .collect(Collectors.joining("\n\n--\n\n"));
+        // RAG 检索已由 QuestionAnswerAdvisor 自动完成，无需手动调用
+        // Advisor 会在 before 阶段自动检索向量库并注入上下文到 system prompt
 
         String content = chatClient.prompt()
-                .system(buildSystemPrompt(context))
+                .system("你是一个电商智能客服助手。" +
+                        "你可以帮助用户查询订单状态、推荐商品、处理售后问题。" +
+                        "当用户提到订单号或订单相关问题时，使用工具查询订单信息后再回答。")
                 .user(message)
                 .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
                 .call()
                 .content();
 
-        long t3 = System.currentTimeMillis();
-        log.info("【T3】ChatClient.call()完成 耗时{}ms (含DeepSeek调用+ChatMemory读写)", t3 - t2);
+        long t2 = System.currentTimeMillis();
+        log.info("【T2】请求完成 总耗时{}ms", t2 - t1);
 
         log.info("【agent】回复==》{}", content);
-
-        long t4 = System.currentTimeMillis();
-        log.info("【T4】请求完成 总耗时{}ms (RAG:{}ms | LLM:{}ms | 序列化:{}ms)",
-                t4 - t1, t2 - t1, t3 - t2, t4 - t3);
         return content;
     }
 
@@ -197,17 +190,4 @@ public class AgentController {
         return text;
     }
 
-    private String buildSystemPrompt(String context) {
-        String basePrompt = "你是一个电商智能客服助手。" +
-                "你可以帮助用户查询订单状态、推荐商品、处理售后问题。" +
-                "当用户提到订单号或订单相关问题时，使用工具查询订单信息后再回答。";
-
-        if (context != null && !context.isBlank()) {
-            basePrompt += "\n\n参考资料（仅作辅助，如果与工具查询结果冲突，以工具结果为准）：\n" + context;
-        } else {
-            basePrompt += "\n\n没有找到相关的参考资料，请仅基于工具查询结果或通用知识回答。";
-        }
-        log.info("【agent】系统提示语=>{}", basePrompt);
-        return basePrompt;
-    }
 }
