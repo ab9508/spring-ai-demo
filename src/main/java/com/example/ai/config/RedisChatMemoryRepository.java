@@ -1,10 +1,12 @@
 package com.example.ai.config;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.util.StringUtils;
 
 import java.util.*;
 
@@ -20,6 +22,17 @@ import java.util.*;
  * ============ Redis 数据结构 ============
  * Key: chat:memory:{conversationId}  →  List<String>
  * 每个元素是一条消息的 JSON 字符串，按时间顺序排列（左旧右新）
+ * <p>
+ * ============ 序列化方案（v3 Jackson） ============
+ * 使用 Jackson ObjectMapper + DTO 中转，替代手动 JSON 拼接（v2）。
+ * <p>
+ * 为什么不直接用 Jackson 反序列化 Message 子类？
+ * Spring AI 的 UserMessage / AssistantMessage / ToolResponseMessage 没有默认构造方法，
+ * Jackson 无法直接实例化。
+ * <p>
+ * 解决方案：自定义 DTO（MessageDto / ToolCallDto / ToolResponseDto）做中间层，
+ * 序列化时 Message → DTO → JSON，反序列化时 JSON → DTO → Message。
+ * DTO 是普通 POJO（@Data 提供默认构造+getter/setter），Jackson 无障碍处理。
  * <p>
  * ============ 序列化方案（v2，支持 Tool Calling） ============
  * 手动 JSON 序列化/反序列化，不依赖 Jackson/FastJSON 自动反序列化。
@@ -37,9 +50,11 @@ public class RedisChatMemoryRepository implements ChatMemoryRepository {
 
     private static final String KEY_PREFIX = "chat:memory:";
     private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
 
     public RedisChatMemoryRepository(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
+        this.objectMapper = new ObjectMapper();
     }
 
     @Override
@@ -99,7 +114,7 @@ public class RedisChatMemoryRepository implements ChatMemoryRepository {
         int qaIndex = 0;
         for (Message m : messages) {
             if (Objects.equals(MessageType.USER.name(), m.getMessageType().name())) {
-                qaIndex += 1;// 遇到 USER 消息就 +1
+                qaIndex += 1; // 遇到 USER 消息就 +1
             }
             jsonList.add(serializeMessage(m, qaIndex));
         }
@@ -122,238 +137,166 @@ public class RedisChatMemoryRepository implements ChatMemoryRepository {
 
     /**
      * 序列化 Message → JSON 字符串
-     * <p>
-     * 格式说明：
-     * - USER/SYSTEM/ASSISTANT(纯文本): {"messageType":"USER","text":"内容"}
-     * - ASSISTANT(含 tool_calls): {"messageType":"ASSISTANT","text":"xxx","toolCalls":[{"id":"call_xxx","type":"function","name":"queryOrder","arguments":"{\"orderId\":\"ORD-001\"}"}]}
-     * - TOOL(ToolResponseMessage): {"messageType":"TOOL","toolResponses":[{"id":"call_xxx","name":"queryOrder","responseData":"{\"status\":\"已发货\"}"}]}
+     * Message → MessageDto（DTO） → JSON（Jackson）
      */
     private String serializeMessage(Message message, int qaIndex) {
-        String type = message.getMessageType().name();
-
-        return switch (message.getMessageType()) {
-            case USER, SYSTEM -> {
-                String escapedText = escapeJson(message.getText());
-                yield "{\"messageType\":\"" + type + "\",\"text\":\"" + escapedText + "\",\"qaIndex\":" + qaIndex + "}";
-            }
-            case ASSISTANT -> {
-                AssistantMessage am = (AssistantMessage) message;
-                String escapedText = escapeJson(am.getText());
-                StringBuilder sb = new StringBuilder();
-                sb.append("{\"messageType\":\"ASSISTANT\",\"text\":\"").append(escapedText).append("\"");
-                // 序列化 toolCalls（如果有）
-                if (am.hasToolCalls()) {
-                    sb.append(",\"toolCalls\":[");
-                    List<AssistantMessage.ToolCall> toolCalls = am.getToolCalls();
-                    for (int i = 0; i < toolCalls.size(); i++) {
-                        AssistantMessage.ToolCall tc = toolCalls.get(i);
-                        if (i > 0) sb.append(",");
-                        sb.append("{\"id\":\"").append(escapeJson(tc.id()))
-                                .append("\",\"type\":\"").append(escapeJson(tc.type()))
-                                .append("\",\"name\":\"").append(escapeJson(tc.name()))
-                                .append("\",\"arguments\":\"").append(escapeJson(tc.arguments())).append("\"}");
-                    }
-                    sb.append("]");
-                }
-                sb.append(",\"qaIndex\":" + qaIndex + "}");
-                yield sb.toString();
-            }
-            case TOOL -> {
-                ToolResponseMessage trm = (ToolResponseMessage) message;
-                StringBuilder sb = new StringBuilder();
-                sb.append("{\"messageType\":\"TOOL\"");
-                // 序列化 toolResponses
-                List<ToolResponseMessage.ToolResponse> responses = trm.getResponses();
-                if (responses != null && !responses.isEmpty()) {
-                    sb.append(",\"toolResponses\":[");
-                    for (int i = 0; i < responses.size(); i++) {
-                        ToolResponseMessage.ToolResponse tr = responses.get(i);
-                        if (i > 0) sb.append(",");
-                        sb.append("{\"id\":\"").append(escapeJson(tr.id()))
-                                .append("\",\"name\":\"").append(escapeJson(tr.name()))
-                                .append("\",\"responseData\":\"").append(escapeJson(tr.responseData())).append("\"}");
-                    }
-                    sb.append("]");
-                }
-                sb.append(",\"qaIndex\":" + qaIndex + "}");
-                yield sb.toString();
-            }
-        };
+        try {
+            MessageDto dto = toDto(message, qaIndex);
+            return objectMapper.writeValueAsString(dto);
+        } catch (JsonProcessingException e) {
+            log.error("序列化消息失败: {}", message, e);
+            throw new RuntimeException("消息序列化失败", e);
+        }
     }
 
     /**
      * 反序列化 JSON 字符串 → Message
-     * <p>
-     * 支持的消息格式：
-     * - 纯文本消息: {"messageType":"USER","text":"内容"}
-     * - 含 tool_calls 的 AssistantMessage: {"messageType":"ASSISTANT","text":"xxx","toolCalls":[...]}
-     * - ToolResponseMessage: {"messageType":"TOOL","toolResponses":[...]}
+     * JSON（Jackson） → MessageDto（DTO） → Message
      */
     private Message deserializeMessage(String json) {
-        String type = extractJsonValue(json, "messageType");
-        if (!StringUtils.hasText(type)) {
-            log.warn("消息缺少 messageType 字段，跳过: {}", json);
-            return null;
-        }
-
         try {
-            MessageType messageType = MessageType.valueOf(type.toUpperCase());
-            return switch (messageType) {
-                case USER -> {
-                    String text = unescapeJson(extractJsonValue(json, "text"));
-                    yield text != null ? new UserMessage(text) : null;
-                }
-                case SYSTEM -> {
-                    String text = unescapeJson(extractJsonValue(json, "text"));
-                    yield text != null ? new SystemMessage(text) : null;
-                }
-                case ASSISTANT -> {
-                    String text = unescapeJson(extractJsonValue(json, "text"));
-                    // 尝试还原 toolCalls
-                    String toolCallsJson = extractJsonArray(json, "toolCalls");
-                    List<AssistantMessage.ToolCall> toolCalls = parseToolCalls(toolCallsJson);
-                    if (toolCalls != null && !toolCalls.isEmpty()) {
-                        yield new AssistantMessage(text != null ? text : "", null, toolCalls);
-                    }
-                    yield new AssistantMessage(text != null ? text : "");
-                }
-                case TOOL -> {
-                    // 还原 ToolResponseMessage
-                    String toolResponsesJson = extractJsonArray(json, "toolResponses");
-                    List<ToolResponseMessage.ToolResponse> responses = parseToolResponses(toolResponsesJson);
-                    if (responses != null && !responses.isEmpty()) {
-                        yield new ToolResponseMessage(responses);
-                    }
-                    // 兼容旧格式：TOOL 降级为 AssistantMessage
-                    log.warn("TOOL 消息缺少 toolResponses 字段，降级为 AssistantMessage: {}", json);
-                    String text = unescapeJson(extractJsonValue(json, "text"));
-                    yield text != null ? new AssistantMessage(text) : null;
-                }
-                default -> {
-                    log.warn("未知消息类型: {}", type);
-                    yield null;
-                }
-            };
+            MessageDto dto = objectMapper.readValue(json, MessageDto.class);
+            return fromDto(dto);
         } catch (Exception e) {
             log.warn("反序列化消息失败，跳过: {}", json, e);
             return null;
         }
     }
 
-    // ============ JSON 工具方法 ============
-
     /**
-     * JSON 字符串转义（用于序列化）
+     * Message → DTO 转换
      */
-    private String escapeJson(String text) {
-        if (text == null) return "";
-        return text.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-    }
+    private MessageDto toDto(Message message, int qaIndex) {
+        MessageDto dto = new MessageDto();
+        dto.setMessageType(message.getMessageType().name());
+        dto.setQaIndex(qaIndex);
 
-    /**
-     * JSON 字符串反转义（用于反序列化）
-     */
-    private String unescapeJson(String text) {
-        if (text == null) return null;
-        return text.replace("\\\"", "\"")
-                .replace("\\n", "\n")
-                .replace("\\r", "\r")
-                .replace("\\t", "\t")
-                .replace("\\\\", "\\");
-    }
-
-    /**
-     * 从 JSON 中提取数组字段的原始字符串（含方括号）
-     * 例如从 {"toolCalls":[...]} 中提取 [...]
-     * 如果找不到返回 null
-     */
-    private String extractJsonArray(String json, String key) {
-        String searchKey = "\"" + key + "\":[";
-        int start = json.indexOf(searchKey);
-        if (start < 0) return null;
-        start += searchKey.length() - 1; // 包含 [
-        // 找到匹配的 ]
-        int depth = 0;
-        for (int i = start; i < json.length(); i++) {
-            char c = json.charAt(i);
-            if (c == '[') depth++;
-            else if (c == ']') {
-                depth--;
-                if (depth == 0) return json.substring(start, i + 1);
+        switch (message.getMessageType()) {
+            case USER, SYSTEM -> dto.setText(message.getText());
+            case ASSISTANT -> {
+                AssistantMessage am = (AssistantMessage) message;
+                dto.setText(am.getText());
+                if (am.hasToolCalls()) {
+                    List<ToolCallDto> toolCallDtos = new ArrayList<>();
+                    for (AssistantMessage.ToolCall tc : am.getToolCalls()) {
+                        ToolCallDto d = new ToolCallDto();
+                        d.setId(tc.id());
+                        d.setType(tc.type());
+                        d.setName(tc.name());
+                        d.setArguments(tc.arguments());
+                        toolCallDtos.add(d);
+                    }
+                    dto.setToolCalls(toolCallDtos);
+                }
+            }
+            case TOOL -> {
+                ToolResponseMessage trm = (ToolResponseMessage) message;
+                List<ToolResponseDto> responseDtos = new ArrayList<>();
+                for (ToolResponseMessage.ToolResponse tr : trm.getResponses()) {
+                    ToolResponseDto d = new ToolResponseDto();
+                    d.setId(tr.id());
+                    d.setName(tr.name());
+                    d.setResponseData(tr.responseData());
+                    responseDtos.add(d);
+                }
+                dto.setToolResponses(responseDtos);
             }
         }
-        return null;
+        return dto;
     }
 
     /**
-     * 解析 toolCalls JSON 数组 → List<AssistantMessage.ToolCall>
-     * 输入格式: [{"id":"call_xxx","type":"function","name":"queryOrder","arguments":"{\"orderId\":\"ORD-001\"}"}]
+     * DTO → Message 转换
      */
-    private List<AssistantMessage.ToolCall> parseToolCalls(String jsonArray) {
-        if (jsonArray == null || jsonArray.equals("[]")) return Collections.emptyList();
-        List<AssistantMessage.ToolCall> result = new ArrayList<>();
-        // 按 },{ 分割每个元素
-        String[] items = jsonArray.substring(1, jsonArray.length() - 1).split("\\},\\{");
-        for (String item : items) {
-            item = item.replace("{", "").replace("}", "");
-            String id = unescapeJson(extractJsonValue(item, "id"));
-            String type = unescapeJson(extractJsonValue(item, "type"));
-            String name = unescapeJson(extractJsonValue(item, "name"));
-            String arguments = unescapeJson(extractJsonValue(item, "arguments"));
-            if (StringUtils.hasText(name)) {
-                result.add(new AssistantMessage.ToolCall(
-                        id != null ? id : "",
-                        type != null ? type : "function",
-                        name,
-                        arguments != null ? arguments : "{}"
-                ));
-            }
-        }
-        return result;
-    }
-
-    /**
-     * 解析 toolResponses JSON 数组 → List<ToolResponseMessage.ToolResponse>
-     * 输入格式: [{"id":"call_xxx","name":"queryOrder","responseData":"{\"status\":\"已发货\"}"}]
-     */
-    private List<ToolResponseMessage.ToolResponse> parseToolResponses(String jsonArray) {
-        if (jsonArray == null || jsonArray.equals("[]")) return Collections.emptyList();
-        List<ToolResponseMessage.ToolResponse> result = new ArrayList<>();
-        String[] items = jsonArray.substring(1, jsonArray.length() - 1).split("\\},\\{");
-        for (String item : items) {
-            item = item.replace("{", "").replace("}", "");
-            String id = unescapeJson(extractJsonValue(item, "id"));
-            String name = unescapeJson(extractJsonValue(item, "name"));
-            String responseData = unescapeJson(extractJsonValue(item, "responseData"));
-            if (StringUtils.hasText(name)) {
-                result.add(new ToolResponseMessage.ToolResponse(
-                        id != null ? id : "",
-                        name,
-                        responseData != null ? responseData : ""
-                ));
-            }
-        }
-        return result;
-    }
-
-    /**
-     * 简易 JSON 值提取，从 {"key":"value"} 格式中提取指定 key 的 value
-     */
-    private String extractJsonValue(String json, String key) {
-        String searchKey = "\"" + key + "\":\"";
-        int start = json.indexOf(searchKey);
-        if (start < 0) {
+    private Message fromDto(MessageDto dto) {
+        String type = dto.getMessageType();
+        if (type == null) {
+            log.warn("消息缺少 messageType 字段，跳过: {}", dto);
             return null;
         }
-        start += searchKey.length();
-        int end = json.indexOf("\"", start);
-        if (end < 0) {
-            return json.substring(start);
-        }
-        return json.substring(start, end);
+
+        return switch (type) {
+            case "USER" -> new UserMessage(dto.getText());
+            case "SYSTEM" -> new SystemMessage(dto.getText());
+            case "ASSISTANT" -> {
+                if (dto.getToolCalls() != null && !dto.getToolCalls().isEmpty()) {
+                    List<AssistantMessage.ToolCall> toolCalls = new ArrayList<>();
+                    for (ToolCallDto tc : dto.getToolCalls()) {
+                        toolCalls.add(new AssistantMessage.ToolCall(
+                                tc.getId() != null ? tc.getId() : "",
+                                tc.getType() != null ? tc.getType() : "function",
+                                tc.getName(),
+                                tc.getArguments() != null ? tc.getArguments() : "{}"
+                        ));
+                    }
+                    yield new AssistantMessage(
+                            dto.getText() != null ? dto.getText() : "", null, toolCalls);
+                }
+                yield new AssistantMessage(dto.getText() != null ? dto.getText() : "");
+            }
+            case "TOOL" -> {
+                if (dto.getToolResponses() != null && !dto.getToolResponses().isEmpty()) {
+                    List<ToolResponseMessage.ToolResponse> responses = new ArrayList<>();
+                    for (ToolResponseDto tr : dto.getToolResponses()) {
+                        responses.add(new ToolResponseMessage.ToolResponse(
+                                tr.getId() != null ? tr.getId() : "",
+                                tr.getName(),
+                                tr.getResponseData() != null ? tr.getResponseData() : ""
+                        ));
+                    }
+                    yield new ToolResponseMessage(responses);
+                }
+                // 兼容旧格式：TOOL 降级为 AssistantMessage
+                log.warn("TOOL 消息缺少 toolResponses 字段，降级为 AssistantMessage");
+                yield new AssistantMessage(dto.getText() != null ? dto.getText() : "");
+            }
+            default -> {
+                log.warn("未知消息类型: {}", type);
+                yield null;
+            }
+        };
+    }
+
+    // ============ DTO 定义 ============
+
+    /**
+     * 消息 DTO —— Jackson 序列化/反序列化的中间层
+     * <p>
+     * 为什么需要 DTO 而不是直接反序列化 Message？
+     * Message 子类（UserMessage/AssistantMessage/ToolResponseMessage）没有默认构造方法，
+     * Jackson 无法直接实例化。DTO 是普通 POJO，@Data 提供默认构造+getter/setter。
+     */
+    @Data
+    public static class MessageDto {
+        private String messageType;
+        private String text;
+        private List<ToolCallDto> toolCalls;
+        private List<ToolResponseDto> toolResponses;
+        private int qaIndex;
+    }
+
+    /**
+     * ToolCall DTO
+     * 对应 AssistantMessage.ToolCall 的字段
+     * arguments 存储原始 JSON 字符串（如 {"orderId":"ORD-001"}）
+     */
+    @Data
+    public static class ToolCallDto {
+        private String id;
+        private String type;
+        private String name;
+        private String arguments;
+    }
+
+    /**
+     * ToolResponse DTO
+     * 对应 ToolResponseMessage.ToolResponse 的字段
+     * responseData 存储原始 JSON 字符串（如 {"status":"已发货"}）
+     */
+    @Data
+    public static class ToolResponseDto {
+        private String id;
+        private String name;
+        private String responseData;
     }
 }
