@@ -152,20 +152,20 @@ public class AgentController {
                 })
                 .map(chatResponse -> {
 
-                    // 固定【model   = deepseek-v4-flash、metadata.id】流式输出完才有【usage、finishReason = STOP】
-                    String content = chatResponse.getResult().getOutput().getText();
-
-                    // 打印完整响应信息（便于调试和面试理解）
-                    log.info("【ChatResponse 完整信息】");
-                    log.info("  content = {}", content);
-                    log.info("  model   = {}", chatResponse.getMetadata().getModel());
-                    log.info("  finishReason = {}", chatResponse.getResult().getMetadata().getFinishReason());
-                    if (chatResponse.getMetadata().getUsage() != null) {
-                        log.info("  usage.promptTokens     = {}", chatResponse.getMetadata().getUsage().getPromptTokens());
-                        log.info("  usage.generationTokens = {}", chatResponse.getMetadata().getUsage().getCompletionTokens());
-                        log.info("  usage.totalTokens      = {}", chatResponse.getMetadata().getUsage().getTotalTokens());
-                    }
-                    log.info("  metadata = {}", chatResponse.getMetadata());
+//                    // 固定【model   = deepseek-v4-flash、metadata.id】流式输出完才有【usage、finishReason = STOP】
+//                    String content = chatResponse.getResult().getOutput().getText();
+//
+//                    // 打印完整响应信息（便于调试和面试理解）
+//                    log.info("【ChatResponse 完整信息】");
+//                    log.info("  content = {}", content);
+//                    log.info("  model   = {}", chatResponse.getMetadata().getModel());
+//                    log.info("  finishReason = {}", chatResponse.getResult().getMetadata().getFinishReason());
+//                    if (chatResponse.getMetadata().getUsage() != null) {
+//                        log.info("  usage.promptTokens     = {}", chatResponse.getMetadata().getUsage().getPromptTokens());
+//                        log.info("  usage.generationTokens = {}", chatResponse.getMetadata().getUsage().getCompletionTokens());
+//                        log.info("  usage.totalTokens      = {}", chatResponse.getMetadata().getUsage().getTotalTokens());
+//                    }
+//                    log.info("  metadata = {}", chatResponse.getMetadata());
 
 
                     // 只把 content 文本返回给前端（不返回元数据）
