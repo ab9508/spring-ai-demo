@@ -98,11 +98,20 @@ public class CustomRagAdvisor implements BaseAdvisor {
 
     /**
      * after 阶段：LLM 回复之后执行
-     * RAG Advisor 不需要处理响应，直接返回
+     * <p>
+     * 记录 Token 用量日志（input / output / total），用于：
+     * 1. 调试时监控每次对话的资源消耗
+     * 2. 为后续配额系统/成本控制提供数据基础
      */
     @Override
     public ChatClientResponse after(ChatClientResponse response, AdvisorChain chain) {
-        log.info("[RAG Advisor]after-->");
+        try {
+            var usage = response.chatResponse().getMetadata().getUsage();
+            log.info("[Token] input={}, output={}, total={}",
+                    usage.getPromptTokens(), usage.getCompletionTokens(), usage.getTotalTokens());
+        } catch (Exception e) {
+            log.debug("[Token] 无法获取用量信息: {}", e.getMessage());
+        }
         return response;
     }
 
