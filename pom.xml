@@ -47,10 +47,14 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- Spring Boot Web -->
+        <!-- Spring Boot Web (MVC) + WebFlux (SSE 流式响应) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
 
         <!-- Spring AI OpenAI兼容（用于接入DeepSeek） -->

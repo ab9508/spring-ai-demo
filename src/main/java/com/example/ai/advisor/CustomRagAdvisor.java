@@ -9,6 +9,7 @@ import org.springframework.ai.chat.client.advisor.api.BaseAdvisor;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.util.CollectionUtils;
 
 import java.util.Collections;
 import java.util.List;
@@ -64,7 +65,7 @@ public class CustomRagAdvisor implements BaseAdvisor {
                         .build()
         );
 
-        if (docs == null || docs.isEmpty()) {
+        if (CollectionUtils.isEmpty(docs)) {
             log.info("[RAG Advisor] 未检索到相关文档，跳过注入");
             return request;
         }
