@@ -124,7 +124,14 @@ public class RagService {
             log.info("【upload】分段完成，共 {} 个片段", chunks.size());
 
             // 6. 向量化并存储（内部调 Ollama nomic-embed-text → PostgreSQL）
-            vectorStore.add(chunks);
+            int batchSize = 100;
+            for (int i = 0; i < chunks.size(); i += batchSize) {
+                int toIndex = Math.min(i + batchSize, chunks.size());
+                List<Document> batch = chunks.subList(i, toIndex);
+                vectorStore.add(batch);
+                log.info("[RAG] 分批入库 {}/{}", toIndex, chunks.size());
+            }
+
 
             String result = String.format("文档[%s]处理完成，共 %d 个片段已入库", originalFilename, chunks.size());
             log.info("【upload】{}", result);
