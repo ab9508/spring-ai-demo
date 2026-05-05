@@ -14,10 +14,8 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
@@ -43,6 +41,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestController
 @RequestMapping("/agent")
+@CrossOrigin(origins = "*")
 public class AgentController {
 
     private final ChatClient chatClient;          // 带工具+记忆+RAG的（用于 /chat /chat/stream）
@@ -78,10 +77,11 @@ public class AgentController {
     /**
      * 同步对话接口（保留，用于调试/测试）
      */
-    @GetMapping("/chat")
-    public String chat(@RequestParam(defaultValue = "default") String conversationId,
-                       @RequestParam String message) {
+    @PostMapping(value = "/chat", produces = "application/json;charset=UTF-8")
+    public ChatController.ChatResponse chat(@RequestBody ChatController.ChatRequest request) {
         long t1 = System.currentTimeMillis();
+        String conversationId = StringUtils.isEmpty(request.getConversationId()) ? "default" : request.getConversationId();
+        String message = request.getMessage();
         log.info("【T1】请求进入 conversationId={}, message={}", conversationId, message);
 
         // .call() 返回 ChatResponse，包含完整元数据（content / metadata / usage）
@@ -109,7 +109,11 @@ public class AgentController {
         long t2 = System.currentTimeMillis();
         log.info("【T2】请求完成 总耗时{}ms", t2 - t1);
 
-        return content;
+        ChatController.ChatResponse resp = new ChatController.ChatResponse();
+        resp.setContent(content);
+        resp.setConversationId(request.getConversationId());
+        resp.setTimestamp(System.currentTimeMillis());
+        return resp;
     }
 
     /**
@@ -119,22 +123,25 @@ public class AgentController {
      * WebFlux 自动将每个 token 推送为 SSE 事件。
      * <p>
      * SSE 协议格式：
-     *   data: token1\n\n
-     *   data: token2\n\n
-     *   data: [DONE]\n\n
+     * data: token1\n\n
+     * data: token2\n\n
+     * data: [DONE]\n\n
      * <p>
      * 每个前端 EventSource.onmessage 收到的 e.data 就是每个 token 的文本。
      * Spring WebFlux 的 ServerSentEvent 默认把 Flux<String> 的每个元素包装为 "data: xxx\n\n"。
      * <p>
      * 前端调用示例：
-     *   const es = new EventSource('/agent/chat/stream?conversationId=xxx&message=你好');
-     *   es.onmessage = (e) => { process.stdout.write(e.data); };  // e.data = 单个 token
-     *   es.onerror = () => es.close();
+     * const es = new EventSource('/agent/chat/stream?conversationId=xxx&message=你好');
+     * es.onmessage = (e) => { process.stdout.write(e.data); };  // e.data = 单个 token
+     * es.onerror = () => es.close();
      */
-    @GetMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> chatStream(@RequestParam(defaultValue = "default") String conversationId,
-                                   @RequestParam String message) {
+    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> chatStream(
+            @RequestBody ChatController.ChatRequest request
+    ) {
         long t1 = System.currentTimeMillis();
+        String conversationId = StringUtils.isEmpty(request.getConversationId()) ? "default" : request.getConversationId();
+        String message = request.getMessage();
         log.info("【T1-stream】请求进入 conversationId={}, message={}", conversationId, message);
 
         return chatClient.prompt()
@@ -226,8 +233,8 @@ public class AgentController {
      * Spring AI 1.0.5 没有 entity(Class) 这个 API，
      * 所以让 LLM 返回 JSON 字符串，再用 Jackson 手动反序列化。
      * 这是最稳妥的方案，不依赖 Spring AI 内部结构。
-     *
-     *	LLM: Large Language Model，大语言模型。本项目用的是 DeepSeek-V3（通过 API 调用），本质是一个概率模型，根据输入文本预测下一个 token
+     * <p>
+     * LLM: Large Language Model，大语言模型。本项目用的是 DeepSeek-V3（通过 API 调用），本质是一个概率模型，根据输入文本预测下一个 token
      */
     @GetMapping("/analyzeIntent")
     public IntentRecord analyzeIntent(@RequestParam String message) {

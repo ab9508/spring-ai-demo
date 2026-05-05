@@ -264,7 +264,7 @@
             var fullContent = '';
 
             try {
-                var url = BASE + '/api/chat/stream';
+                var url = BASE + '/agent/chat/stream';
                 var response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -335,7 +335,7 @@
             bubble.textContent = '思考中...';
 
             try {
-                var url = BASE + '/api/chat';
+                var url = BASE + '/agent/chat';
                 var response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

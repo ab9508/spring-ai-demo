@@ -1,11 +1,15 @@
 package com.example.ai.controller;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
+
+import java.util.Objects;
 
 /**
  * 基础AI对话接口
@@ -68,11 +72,18 @@ public class ChatController {
      * 前端API接口(POST方式，非流式，返回JSON)
      * 带system prompt约束 + 控制回复长度
      */
-    @PostMapping("/api/chat")
+    @PostMapping(value = "/api/chat", produces = "application/json;charset=UTF-8")
     public ChatResponse chatApi(@RequestBody ChatRequest request) {
         long t1 = System.currentTimeMillis();
         log.info("【API】chat请求进入 message={}, conversationId={}",
                 request.getMessage(), request.getConversationId());
+        if(Objects.equals(request.getMessage(),"ping")){
+            ChatResponse resp = new ChatResponse();
+            resp.setContent("ping ok");
+            resp.setConversationId(request.getConversationId());
+            resp.setTimestamp(System.currentTimeMillis());
+            return resp;
+        }
 
         String content = chatClient.prompt()
                 .system("你是AI智能助手，回答要求：" +
@@ -87,7 +98,11 @@ public class ChatController {
         long t2 = System.currentTimeMillis();
         log.info("【API】chat请求完成 耗时{}ms", t2 - t1);
 
-        return new ChatResponse(content, request.getConversationId());
+        ChatResponse resp = new ChatResponse();
+        resp.setContent(content);
+        resp.setConversationId(request.getConversationId());
+        resp.setTimestamp(System.currentTimeMillis());
+        return resp;
     }
 
     /**
@@ -113,7 +128,7 @@ public class ChatController {
     /**
      * 清空对话历史接口
      */
-    @PostMapping("/api/chat/clear")
+    @PostMapping(value = "/api/chat/clear", produces = "application/json;charset=UTF-8")
     public ClearResponse clearChat(@RequestBody ClearRequest request) {
         log.info("【API】清空对话历史 conversationId={}", request.getConversationId());
         // TODO: 实际清空逻辑需要在ChatMemory中实现
@@ -130,16 +145,12 @@ public class ChatController {
     }
 
     @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class ChatResponse {
         private String content;
         private String conversationId;
         private Long timestamp;
-
-        public ChatResponse(String content, String conversationId) {
-            this.content = content;
-            this.conversationId = conversationId;
-            this.timestamp = System.currentTimeMillis();
-        }
     }
 
     @Data
