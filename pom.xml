@@ -57,14 +57,17 @@
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
 
-        <!-- Spring AI OpenAI兼容（用于接入DeepSeek） -->
-        <!-- GA版改名：spring-ai-openai-spring-boot-starter → spring-ai-starter-model-openai -->
+        <!-- Spring AI OpenAI兼容（用于接入DeepSeek API，通过开关切换） -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
 
-        <!-- PDF文档读取：PagePdfDocumentReader / ParagraphPdfDocumentReader -->
+        <!-- Ollama 本地模型（Chat + Embedding） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-ollama</artifactId>
+        </dependency>
         <!-- 版本由 spring-ai-bom 统一管理，不需要写 version -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
@@ -78,11 +81,7 @@
             <artifactId>spring-ai-tika-document-reader</artifactId>
         </dependency>
 
-        <!-- Ollama 核心模型（仅用于 Embedding，不用 starter 避免自动配置 OllamaChatModel 冲突） -->
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-ollama</artifactId>
-        </dependency>
+        <!-- Ollama 核心依赖已由 starter 包含，无需单独声明 -->
 
 
         <!-- 向量存储核心：SimpleVectorStore（内存级，无需外部数据库，仅用于学习/Demo）-->

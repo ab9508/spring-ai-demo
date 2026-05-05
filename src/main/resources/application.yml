@@ -1,6 +1,10 @@
 server:
   port: 8080
 
+app:
+  chat:
+    provider: ollama    # 切换模型：ollama（本地免费，内存不足运行慢,需要删除<think></think>之间内容） | openai（DeepSeek API）
+
 spring:
   application:
     name: spring-ai-demo
@@ -21,26 +25,37 @@ spring:
       database: 0
 
   ai:
+    # ============ 向量存储 ============
     vectorstore:
       pgvector:
         initialize-schema: true    # 自动创建向量表（首次启动用）
         dimensions: 768             # nomic-embed-text 的维度
-  # ============ AI 配置 ============
-  # Chat 对话：DeepSeek（spring-ai-starter-model-openai 自动装配读取此配置）
+
+    # ============ Ollama 本地模型（默认使用，不支持tool） HTTP 400 - {"error":"registry.ollama.ai/library/deepseek-r1:8b does not support tools"} ============
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: deepseek-r1:8b
+          temperature: 0.7
+      embedding:
+        options:
+          model: nomic-embed-text
+
+    # ============ DeepSeek API（通过 app.chat.provider=openai 切换） ============
     openai:
-      api-key: ${DEEPSEEK_API_KEY}
+      api-key: ${DEEPSEEK_API_KEY:sk-xxx}
       base-url: https://api.deepseek.com
       chat:
         options:
           model: deepseek-chat
           temperature: 0.7
+      embedding:
+        enabled: false     # Ollama 已提供 Embedding，禁用 OpenAI 的
 
-  # Embedding：Ollama 本地（在 SpringAiDemoApplication 中手动创建 Bean，不走 yml 配置）
-  # 确保本地已执行：ollama pull nomic-embed-text && ollama serve
-  # Redis ChatMemory：手写 RedisChatMemoryRepository 实现（见 config 包），key 前缀 chat:memory:{conversationId}
 # 调试时开启详细日志
 logging:
   level:
-    com.example.ai.config.RedisChatMemoryRepository: DEBUG
-    com.example.ai.tool.OrderTools: DEBUG
-    com.example.ai.controller.AgentController: DEBUG
+    com.example.ai.config: DEBUG
+    com.example.ai.tool: DEBUG
+    com.example.ai.controller: DEBUG
