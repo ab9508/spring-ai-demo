@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 智能助手</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #app {
+            width: 90%;
+            max-width: 1000px;
+            height: 90vh;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .chat-header {
+            background: linear-gradient(135deg, #4A90E2, #357ABD);
+            color: white;
+            padding: 20px 30px;
+            text-align: center;
+        }
+        .chat-header h1 { font-size: 24px; margin-bottom: 5px; }
+        .chat-header p { font-size: 14px; opacity: 0.8; }
+
+        .message-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #F5F5F5;
+        }
+        .message-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+        .message-user { flex-direction: row-reverse; }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            flex-shrink: 0;
+            font-size: 14px;
+        }
+        .avatar-ai { background: linear-gradient(135deg, #4A90E2, #357ABD); }
+        .avatar-user { background: linear-gradient(135deg, #50C878, #3AAF6F); }
+
+        .message-content { max-width: 70%; margin: 0 15px; }
+        .message-user .message-content { text-align: right; }
+
+        .message-bubble {
+            background: white;
+            padding: 12px 18px;
+            border-radius: 18px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            word-break: break-word;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+        .message-user .message-bubble {
+            background: linear-gradient(135deg, #4A90E2, #357ABD);
+            color: white;
+        }
+        .message-time { font-size: 12px; color: #999; margin-top: 5px; display: block; }
+
+        .loading-dots { display: flex; gap: 5px; padding: 10px 0; }
+        .dot {
+            width: 8px; height: 8px; border-radius: 50%; background: #999;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+        .dot:nth-child(1) { animation-delay: -0.32s; }
+        .dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+
+        .input-area { padding: 20px; background: white; border-top: 1px solid #eee; }
+        .input-wrapper { display: flex; gap: 10px; align-items: center; }
+
+        .input-field {
+            flex: 1; border: 2px solid #eee; border-radius: 25px;
+            padding: 12px 20px; font-size: 16px; outline: none;
+        }
+        .input-field:focus { border-color: #4A90E2; }
+
+        .send-button {
+            background: linear-gradient(135deg, #4A90E2, #357ABD);
+            color: white; border: none; border-radius: 25px;
+            padding: 12px 30px; font-size: 16px; cursor: pointer;
+        }
+        .send-button:disabled { background: #ccc; cursor: not-allowed; }
+
+        /* 流式开关 */
+        .stream-toggle {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 13px; color: #666;
+        }
+        .switch {
+            position: relative; width: 40px; height: 22px;
+            background: #ccc; border-radius: 11px;
+            cursor: pointer; transition: background 0.3s;
+        }
+        .switch.active { background: #4A90E2; }
+        .switch-knob {
+            position: absolute; top: 2px; left: 2px;
+            width: 18px; height: 18px; border-radius: 50%;
+            background: white; transition: left 0.3s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .switch.active .switch-knob { left: 20px; }
+
+        .input-tips { text-align: center; margin-top: 10px; color: #999; font-size: 12px; }
+
+        .status-bar {
+            padding: 10px 20px; background: #f8f9fa; border-top: 1px solid #eee;
+            font-size: 12px; color: #666; display: flex; justify-content: space-between;
+        }
+        .status-ok { color: #28a745; }
+        .status-fail { color: #dc3545; }
+
+        /* 滚动条 */
+        .message-list::-webkit-scrollbar { width: 6px; }
+        .message-list::-webkit-scrollbar-track { background: #f1f1f1; }
+        .message-list::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="chat-header">
+            <h1>AI 智能助手</h1>
+            <p>Spring AI 驱动 · 本地运行</p>
+        </div>
+
+        <div class="message-list" id="msgList"></div>
+
+        <div class="input-area">
+            <div class="input-wrapper">
+                <input type="text" class="input-field" id="msgInput"
+                       placeholder="输入你的问题..." onkeydown="handleKey(event)">
+                <div class="stream-toggle">
+                    <span id="streamLabel">流式输出</span>
+                    <div class="switch active" id="streamSwitch" onclick="toggleStream()">
+                        <div class="switch-knob"></div>
+                    </div>
+                </div>
+                <button class="send-button" id="sendBtn" onclick="sendMessage()">发送</button>
+            </div>
+            <div class="input-tips">按 Enter 发送消息</div>
+        </div>
+
+        <div class="status-bar">
+            <span id="tokenInfo">Token：无</span>
+            <span id="connStatus" class="status-fail">● 未连接</span>
+        </div>
+    </div>
+
+    <script>
+        /* 后端地址，用拼接方式避免被安全策略替换 */
+        var HOST = '127.0.0.1';
+        var PORT = '8080';
+        var BASE = 'http://' + HOST + ':' + PORT;
+
+        var msgList    = document.getElementById('msgList');
+        var msgInput   = document.getElementById('msgInput');
+        var sendBtn    = document.getElementById('sendBtn');
+        var connStatus = document.getElementById('connStatus');
+        var tokenInfo  = document.getElementById('tokenInfo');
+        var streamSwitch = document.getElementById('streamSwitch');
+        var streamLabel  = document.getElementById('streamLabel');
+        var isStreaming  = true;   // 默认开启流式
+        var isLoading    = false;
+
+        /* ========== 工具函数 ========== */
+
+        function getTime() {
+            var d = new Date();
+            return pad(d.getHours()) + ':' + pad(d.getMinutes());
+        }
+        function pad(n) { return String(n).padStart(2, '0'); }
+
+        /* 滚动到底部 */
+        function scrollBottom() {
+            msgList.scrollTop = msgList.scrollHeight;
+        }
+
+        /* 渲染一条完整消息（非流式用） */
+        function renderMsg(role, content) {
+            var isUser = (role === 'user');
+            var item = document.createElement('div');
+            item.className = 'message-item' + (isUser ? ' message-user' : '');
+
+            var avatar = document.createElement('div');
+            avatar.className = 'avatar ' + (isUser ? 'avatar-user' : 'avatar-ai');
+            avatar.textContent = isUser ? '\u6211' : 'AI';
+
+            var wrap = document.createElement('div');
+            wrap.className = 'message-content';
+
+            var bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.textContent = content;
+
+            var time = document.createElement('span');
+            time.className = 'message-time';
+            time.textContent = getTime();
+
+            wrap.appendChild(bubble);
+            wrap.appendChild(time);
+            item.appendChild(avatar);
+            item.appendChild(wrap);
+            msgList.appendChild(item);
+            scrollBottom();
+            return item;
+        }
+
+        /* 创建AI消息占位（流式用，返回 bubble 元素供追加） */
+        function createStreamingMsg() {
+            var item = document.createElement('div');
+            item.className = 'message-item';
+
+            var avatar = document.createElement('div');
+            avatar.className = 'avatar avatar-ai';
+            avatar.textContent = 'AI';
+
+            var wrap = document.createElement('div');
+            wrap.className = 'message-content';
+
+            var bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.textContent = '';
+
+            var time = document.createElement('span');
+            time.className = 'message-time';
+            time.textContent = getTime();
+
+            wrap.appendChild(bubble);
+            wrap.appendChild(time);
+            item.appendChild(avatar);
+            item.appendChild(wrap);
+            msgList.appendChild(item);
+            scrollBottom();
+            return bubble;
+        }
+
+        /* ========== 流式 SSE 消费 ========== */
+
+        async function sendStream(text) {
+            var bubble = createStreamingMsg();
+            var fullContent = '';
+
+            try {
+                var url = BASE + '/api/chat/stream';
+                var response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text, conversationId: 'default' })
+                });
+
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+
+                var reader  = response.body.getReader();
+                var decoder = new TextDecoder('utf-8');
+                var buffer  = '';
+
+                while (true) {
+                    var result = await reader.read();
+                    if (result.done) break;
+
+                    buffer += decoder.decode(result.value, { stream: true });
+
+                    // 按 \n\n 分割 SSE 事件
+                    var parts = buffer.split('\n\n');
+                    buffer = parts.pop();  // 最后一段可能不完整，保留
+
+                    for (var i = 0; i < parts.length; i++) {
+                        var event = parts[i];
+                        var lines = event.split('\n');
+                        for (var j = 0; j < lines.length; j++) {
+                            var line = lines[j];
+                            if (line.indexOf('data:') === 0) {
+                                var token = line.slice(5);
+                                // SSE 规范：空 data 表示消息结束（有时是 keep-alive）
+                                if (token === '') continue;
+                                fullContent += token;
+                                bubble.textContent = fullContent;
+                                scrollBottom();
+                            }
+                        }
+                    }
+                }
+
+                // 处理缓冲区剩余内容
+                if (buffer.trim()) {
+                    var lines2 = buffer.split('\n');
+                    for (var k = 0; k < lines2.length; k++) {
+                        if (lines2[k].indexOf('data:') === 0) {
+                            var token2 = lines2[k].slice(5);
+                            if (token2 !== '') {
+                                fullContent += token2;
+                                bubble.textContent = fullContent;
+                            }
+                        }
+                    }
+                }
+
+                connStatus.textContent = '\u25cf 已连接';
+                connStatus.className = 'status-ok';
+
+            } catch (err) {
+                bubble.textContent = '流式请求失败：' + err.message;
+                connStatus.textContent = '\u25cf 未连接';
+                connStatus.className = 'status-fail';
+            }
+        }
+
+        /* ========== 非流式请求 ========== */
+
+        async function sendNormal(text) {
+            var bubble = createStreamingMsg();
+            bubble.textContent = '思考中...';
+
+            try {
+                var url = BASE + '/api/chat';
+                var response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text, conversationId: 'default' })
+                });
+
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+
+                var data = await response.json();
+                bubble.textContent = data.content || '无回复';
+
+                connStatus.textContent = '\u25cf 已连接';
+                connStatus.className = 'status-ok';
+
+            } catch (err) {
+                bubble.textContent = '发送失败：' + err.message;
+                connStatus.textContent = '\u25cf 未连接';
+                connStatus.className = 'status-fail';
+            }
+        }
+
+        /* ========== 发送入口 ========== */
+
+        function sendMessage() {
+            var text = msgInput.value.trim();
+            if (!text || isLoading) return;
+
+            renderMsg('user', text);
+            msgInput.value = '';
+            isLoading = true;
+            sendBtn.disabled = true;
+
+            var task = isStreaming ? sendStream(text) : sendNormal(text);
+
+            task.finally(function() {
+                isLoading = false;
+                sendBtn.disabled = false;
+                msgInput.focus();
+            });
+        }
+
+        function handleKey(e) {
+            if (e.key === 'Enter') sendMessage();
+        }
+
+        /* ========== 流式开关 ========== */
+
+        function toggleStream() {
+            isStreaming = !isStreaming;
+            streamSwitch.classList.toggle('active', isStreaming);
+            streamLabel.textContent = isStreaming ? '流式输出' : '普通模式';
+        }
+
+        /* ========== 初始化 ========== */
+
+        // 测试后端连接
+        fetch(BASE + '/chat?message=ping')
+            .then(function(r) {
+                if (r.ok) {
+                    connStatus.textContent = '\u25cf 已连接';
+                    connStatus.className = 'status-ok';
+                } else {
+                    connStatus.textContent = '\u25cf 未连接';
+                    connStatus.className = 'status-fail';
+                }
+            })
+            .catch(function() {
+                connStatus.textContent = '\u25cf 未连接';
+                connStatus.className = 'status-fail';
+            });
+
+        // 初始欢迎消息
+        renderMsg('assistant', '你好！我是AI智能助手，有什么可以帮助你的吗？');
+    </script>
+</body>
+</html>

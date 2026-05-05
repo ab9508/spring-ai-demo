@@ -1,0 +1,20 @@
+{
+  "name": "spring-ai-chat",
+  "version": "1.0.0",
+  "description": "Spring AI Chat Frontend with uni-app",
+  "scripts": {
+    "dev:h5": "vite",
+    "build:h5": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.2.47"
+  },
+  "devDependencies": {
+    "@dcloudio/uni-app": "latest",
+    "@dcloudio/uni-components": "latest",
+    "@dcloudio/uni-h5": "latest",
+    "@dcloudio/vite-plugin-uni": "latest",
+    "vite": "^4.0.0"
+  }
+}

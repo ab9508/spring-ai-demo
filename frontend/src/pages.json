@@ -1,0 +1,20 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "AI 智能助手",
+        "navigationBarBackgroundColor": "#4A90E2",
+        "navigationBarTextStyle": "white",
+        "backgroundColor": "#F5F5F5"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarBackgroundColor": "#4A90E2",
+    "backgroundColor": "#F5F5F5"
+  },
+  "uniIdRouter": {},
+  "condition": {}
+}
