@@ -11,6 +11,7 @@ import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
@@ -38,7 +39,9 @@ import reactor.core.publisher.Flux;
 @RestController
 @RequestMapping("/agent")
 @CrossOrigin(origins = "*")
-@Profile("!mcp-server")   // 加在这
+// 排除 mcp-server（不需要Agent功能）和 mcp-client（避免依赖 OrderTools 冲突）
+@Profile("!mcp-server")
+@ConditionalOnProperty(name = "app.mcp.client.enabled", havingValue = "false", matchIfMissing = true)
 public class AgentController {
 
     private final ChatClient chatClient;          // 带工具+记忆+RAG的（用于 /chat /chat/stream）

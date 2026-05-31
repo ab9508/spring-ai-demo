@@ -8,7 +8,7 @@ import com.example.ai.entity.OrderInfo;
 import com.example.ai.entity.ProductInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.context.annotation.Profile;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -35,7 +35,9 @@ import java.util.List;
  */
 @Slf4j
 @Component
-//@Profile("mcp-server")
+// mcp-client 模式下不加载 OrderTools（强制 Client 走 MCP 远程调用 Server）
+// 默认模式(8080) 和 mcp-server(8081) 模式下继续使用本地 @Tool
+@ConditionalOnProperty(name = "app.mcp.client.enabled", havingValue = "false", matchIfMissing = true)
 public class OrderTools {
 
     private final OrderDao orderDao;

@@ -2,6 +2,7 @@ package com.example.ai.controller;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -50,8 +51,14 @@ public class McpClientController {
      */
     public McpClientController(ChatClient.Builder builder,
                                ToolCallbackProvider mcpTools) {
+        ToolCallback[] callbacks = mcpTools.getToolCallbacks();
+        log.info("【MCP Client】从Server获取到 {} 个远程工具", callbacks.length);
+        for (ToolCallback cb : callbacks) {
+            log.info("  - 工具: {} - {}", cb.getToolDefinition().name(), cb.getToolDefinition().description());
+        }
+
         this.chatClient = builder
-                .defaultToolCallbacks(mcpTools.getToolCallbacks())
+                .defaultToolCallbacks(callbacks)
                 .build();
         log.info("【MCP Client】ChatClient 已注入MCP远程工具");
     }

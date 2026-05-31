@@ -18,6 +18,5 @@ spring:
         sse:
           connections:
             # 只填Server的根URL，Client自动访问 /sse 端点建立SSE连接
-            # Server的 sse-message-endpoint=/mcp/message 是POST消息端点，Client自动处理
             default:
               url: http://localhost:8081
