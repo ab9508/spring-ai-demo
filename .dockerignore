@@ -1,0 +1,9 @@
+target/
+*.log
+*~
+.DS_Store
+node_modules/
+docs/
+plans/
+python-demo/
+*.md
