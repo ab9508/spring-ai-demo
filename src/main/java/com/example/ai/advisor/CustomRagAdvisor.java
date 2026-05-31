@@ -124,7 +124,7 @@ public class CustomRagAdvisor implements BaseAdvisor {
      * 相对分数过滤（复用 RagService 的实战经验）
      * <p>
      * 1. 如果 top1 < 0.45，全部拒绝（绝对值兜底）
-     * 2. 如果 top1 和 top2 分差 < 0.08，且 top1 < 0.7，说明无区分度，全部拒绝
+     * 2. 如果 top1 和 top2 分差 < 0.05，且 top1 < 0.6，说明无区分度，全部拒绝
      * 3. 只保留 score > top1 * 0.85 的 chunk（与最高分相差不超过 15%）
      */
     private List<Document> filterByRelativeScore(List<Document> docs) {
@@ -141,14 +141,17 @@ public class CustomRagAdvisor implements BaseAdvisor {
             return Collections.emptyList();
         }
 
-        // 无区分度检测
-        if (docs.size() > 1) {
-            double top2Score = docs.get(1).getScore() != null ?
-                    docs.get(1).getScore() : 0.0;
-            double gap = top1Score - top2Score;
-            if (gap < 0.08 && top1Score < 0.7) {
-                log.info("[RAG Advisor] top1={} top2={} 差值 {} 不足，判断无明确答案",
-                        top1Score, top2Score, gap);
+        // 无区分度检测（去重后看分差）
+        List<Double> distinct = docs.stream()
+                .map(d -> d.getScore() != null ? d.getScore() : 0.0)
+                .distinct()
+                .sorted((a, b) -> Double.compare(b, a))
+                .toList();
+        if (distinct.size() > 1) {
+            double gap = distinct.get(0) - distinct.get(1);
+            if (gap < 0.05 && distinct.get(0) < 0.6) {
+                log.info("[RAG Advisor] top1={} top2Distinct={} 差值 {} 不足，判断无明确答案",
+                        distinct.get(0), distinct.get(1), gap);
                 return Collections.emptyList();
             }
         }

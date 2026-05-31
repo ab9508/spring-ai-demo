@@ -198,7 +198,7 @@ public class RagService {
     /**
      * 相对分数过滤
      * 1.如果top1 < 0.45,全部拒绝(绝对值兜底)
-     * 2.如果top1 和 top2 分差<0.08,且top1 <0.7,说明无区分度,全部拒绝
+     * 2.如果top1 和 top2 分差<0.05,且top1 <0.6,说明无区分度,全部拒绝
      * 3.只保留score>top1 * 0.85的chunk(与最高分相差不超过15%)
      */
     public List<Document> filterByRelativeScore(String question) {
@@ -219,11 +219,18 @@ public class RagService {
             log.info("【rag过滤】top1分数{}过低，返回空结果", top1Score);
             return Collections.emptyList();
         }
-        if (documents.size() > 2) {
-            double top2Score = documents.get(1).getScore() != null ? documents.get(1).getScore() : 0.0;
-            double gap = top1Score - top2Score;
-            if (gap < 0.08 && top1Score < 0.75) {
-                log.info("【rag过滤】top1={} top2={} 差值{}不足，判断无明确答案", top1Score, top2Score, gap);
+        // 去重：连续切片重叠可能导致相同分数，跳过重复
+        // 用 distinct 按 score 去重后检查 gap
+        List<Double> distinctScores = documents.stream()
+                .map(d -> d.getScore() != null ? d.getScore() : 0.0)
+                .distinct()
+                .sorted((a, b) -> Double.compare(b, a))
+                .toList();
+        if (distinctScores.size() > 1) {
+            double gap = distinctScores.get(0) - distinctScores.get(1);
+            if (gap < 0.05 && distinctScores.get(0) < 0.6) {
+                log.info("【rag过滤】top1={} top2Distinct={} 差值{}不足，判断无明确答案",
+                        distinctScores.get(0), distinctScores.get(1), gap);
                 return Collections.emptyList();
             }
         }

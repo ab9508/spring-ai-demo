@@ -29,7 +29,7 @@ spring:
     vectorstore:
       pgvector:
         initialize-schema: true    # 自动创建向量表（首次启动用）
-        dimensions: 768             # nomic-embed-text 的维度
+        dimensions: 1024            # bge-large-zh-v1.5 的维度
 
     # ============ Ollama 本地模型（默认使用，不支持tool） HTTP 400 - {"error":"registry.ollama.ai/library/deepseek-r1:8b does not support tools"} ============
     ollama:
@@ -40,7 +40,7 @@ spring:
           temperature: 0.7
       embedding:
         options:
-          model: nomic-embed-text
+          model: smartcreation/bge-large-zh-v1.5
 
     # ============ DeepSeek API（通过 app.chat.provider=openai 切换） ============
     openai:

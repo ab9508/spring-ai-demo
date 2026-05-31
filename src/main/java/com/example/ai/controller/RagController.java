@@ -95,13 +95,13 @@ public class RagController {
         long t1 = System.currentTimeMillis();
         log.info("【T1】rag/ask请求进入 question={}", question);
 
-        // ① 向量检索：找最相关的 3 个文档片段
-        //    similarityThreshold=0.3: 过滤低分结果，需要提高检索质量
+        // ① 向量检索：找最相关的 5 个文档片段
+        //    similarityThreshold=0.3: bge-large-zh-v1.5 分数偏低，用0.3配合正排保证覆盖率
         List<Document> relevantDocs = vectorStore.similaritySearch(
                 SearchRequest.builder()
                         .query(question)
-                        .topK(3)
-                        .similarityThreshold(0.5)
+                        .topK(5)
+                        .similarityThreshold(0.3)
                         .build()
         );
         long t2 = System.currentTimeMillis();
@@ -134,5 +134,32 @@ public class RagController {
     @GetMapping("/getDocument")
     public List<Document> getDocument(@RequestParam String question) {
         return ragService.filterByRelativeScore(question);
+    }
+
+    /**
+     * 调试：原始向量检索结果（不加过滤，看BGE实际分数分布）
+     */
+    @GetMapping("/debug")
+    public String debug(@RequestParam String question) {
+        List<Document> docs = vectorStore.similaritySearch(
+                org.springframework.ai.vectorstore.SearchRequest.builder()
+                        .query(question)
+                        .topK(5)
+                        .similarityThreshold(0.0)
+                        .build()
+        );
+        StringBuilder sb = new StringBuilder();
+        sb.append("查询：").append(question).append("\n\n");
+        if (docs.isEmpty()) {
+            sb.append("结果：空（无匹配文档）\n");
+        } else {
+            for (int i = 0; i < docs.size(); i++) {
+                Document d = docs.get(i);
+                sb.append("--- 结果 ").append(i + 1).append(" ---\n");
+                sb.append("分数: ").append(String.format("%.4f", d.getScore())).append("\n");
+                sb.append("内容: ").append(d.getText().substring(0, Math.min(150, d.getText().length()))).append("\n\n");
+            }
+        }
+        return sb.toString();
     }
 }
