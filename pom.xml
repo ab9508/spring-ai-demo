@@ -106,17 +106,37 @@
             <artifactId>postgresql</artifactId>
         </dependency>
 
+        <!-- H2 嵌入式数据库，用于 MCP Server 演示（无需外部PostgreSQL）-->
+<!--        <dependency>-->
+<!--            <groupId>com.h2database</groupId>-->
+<!--            <artifactId>h2</artifactId>-->
+<!--            <scope>runtime</scope>-->
+<!--        </dependency>-->
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <version>1.18.34</version>
-            <scope>provided</scope>
         </dependency>
 <!--        Redis ChatMemory：手写实现 ChatMemoryRepository 接口（见选型记录）-->
 <!--        spring data redis 基础依赖-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- MCP Server（暴露@Tool方法给外部Client调用，基于SSE传输）-->
+        <!-- 项目是MVC(Tomcat)栈，必须用webmvc版，webflux版SSE路由在Tomcat下不生效 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
+        </dependency>
+        <!-- MCP Client（连接远程MCP Server，动态发现并调用远程工具）-->
+        <!-- 注意：MCP Client 只有 webflux 版，用 WebClient 发起 SSE 连接 -->
+        <!-- 项目已引入 spring-boot-starter-webflux，WebClient 可在 MVC 环境下正常运行 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-client-webflux</artifactId>
         </dependency>
 
     </dependencies>

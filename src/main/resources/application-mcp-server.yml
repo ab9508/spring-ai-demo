@@ -1,0 +1,55 @@
+# MCP Server 配置
+# 端口用8081，避免和主应用8080冲突
+server:
+  port: 8081
+
+# 强制使用 Servlet 容器（Tomcat），覆盖 webflux 在 classpath 时的自动检测
+# 根因：pom.xml 同时有 spring-boot-starter-web 和 spring-boot-starter-webflux，
+# Spring Boot 会优先选择 Reactive 模式，导致 MVC SSE Controller 不注册（/sse 404）
+spring:
+  main:
+    web-application-type: servlet
+
+  ai:
+    mcp:
+      server:
+        enabled: true
+        type: SYNC         # 显式指定 SYNC 类型，阻止默认的 Stdio 传输器被创建
+        name: spring-ai-demo-mcp-server
+        version: 1.0.0
+        # SSE 端点路径，Client 通过此路径连接
+        sse-message-endpoint: /mcp/message
+
+    # 关闭 pgvector 自动建表（H2 不支持 CREATE EXTENSION vector）
+    vectorstore:
+      pgvector:
+        initialize-schema: false
+
+  # 覆盖为主应用的数据源配置，使用 H2 内存数据库（无需外部PostgreSQL）
+  datasource:
+    url: jdbc:h2:mem:mcpdemo;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+
+  # H2 控制台（可选，浏览器访问 http://localhost:8081/h2-console）
+  h2:
+    console:
+      enabled: true
+
+  # 执行 H2 专用初始化脚本（建表 + 模拟数据）
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:init-data-h2.sql
+
+  # 排除 Redis 自动配置（MCP Server 不需要 Redis）
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      # 排除 WebFlux Server 自动配置，确保用 WebMVC 版注册 /sse 端点
+      - org.springframework.ai.mcp.server.autoconfigure.McpWebFluxServerAutoConfiguration
+app:
+  mcp:
+    server:
+      enabled: true   # 激活 McpServerConfig

@@ -8,6 +8,7 @@ import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
@@ -22,6 +23,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  */
 @Slf4j
 @Configuration
+@Profile("!mcp-server")
 public class RedisChatMemoryConfig {
 
     @Bean

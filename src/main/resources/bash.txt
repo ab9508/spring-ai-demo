@@ -1,0 +1,24 @@
+IDEA → Run/Debug Configurations → 你的 Spring Boot 启动项 → Environment variables → 加上：
+DEEPSEEK_API_KEY=sk-8d9d48b1a2554019ad72d1b3052a85c2
+
+方法 C：JVM 参数启动
+java -Dspring.ai.openai.api-key=sk-8d9d48b1a2554019ad72d1b3052a85c2 -jar app.jar
+
+
+# 1. 启动后端
+cd spring-ai-demo
+mvn spring-boot:run
+
+# 2. 安装前端依赖（新开终端）
+cd spring-ai-demo/frontend
+npm install
+
+# 3. 启动前端
+npm run dev:h5
+
+# 4. 访问前端
+chat.html
+
+
+mvn spring-boot:run "-Dspring-boot.run.profiles=mcp-client" "-Dspring-boot.run.jvmArguments=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8"
+mvn spring-boot:run "-Dspring-boot.run.profiles=mcp-service" "-Dspring-boot.run.jvmArguments=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8"

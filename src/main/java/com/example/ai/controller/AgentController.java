@@ -10,16 +10,12 @@ import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
-
-import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  *
@@ -42,6 +38,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/agent")
 @CrossOrigin(origins = "*")
+@Profile("!mcp-server")   // 加在这
 public class AgentController {
 
     private final ChatClient chatClient;          // 带工具+记忆+RAG的（用于 /chat /chat/stream）

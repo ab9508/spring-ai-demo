@@ -3,7 +3,7 @@ server:
 
 app:
   chat:
-    provider: ollama    # 切换模型：ollama（本地免费，内存不足运行慢,需要删除<think></think>之间内容） | openai（DeepSeek API）
+    provider: openai    # 切换模型：ollama（本地免费，内存不足运行慢,需要删除<think></think>之间内容） | openai（DeepSeek API）
 
 spring:
   application:

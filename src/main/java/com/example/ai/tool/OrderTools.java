@@ -8,10 +8,10 @@ import com.example.ai.entity.OrderInfo;
 import com.example.ai.entity.ProductInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * 订单相关工具集（数据查DB版）
@@ -35,6 +35,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
+//@Profile("mcp-server")
 public class OrderTools {
 
     private final OrderDao orderDao;

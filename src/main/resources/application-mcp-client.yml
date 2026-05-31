@@ -1,0 +1,23 @@
+# MCP Client 配置
+# 端口用8082，避免和主应用8080、MCP Server 8081冲突
+server:
+  port: 8082
+
+app:
+  mcp:
+    client:
+      enabled: true   # 激活 McpClientController
+
+# Client 使用 DeepSeek API（需要Tool Calling支持，Ollama本地模型不支持tools）
+app-chat-provider: openai
+
+spring:
+  ai:
+    mcp:
+      client:
+        sse:
+          connections:
+            # 只填Server的根URL，Client自动访问 /sse 端点建立SSE连接
+            # Server的 sse-message-endpoint=/mcp/message 是POST消息端点，Client自动处理
+            default:
+              url: http://localhost:8081
