@@ -7,6 +7,13 @@ app:
   degradation:
     timeout: 15s         # 单次模型调用超时时间（超时自动切到降级模型）
     fallback: "服务繁忙，请稍后再试"  # 全部模型失败时的兜底回复
+  rate-limit:
+    user:
+      capacity: 20       # 每用户令牌桶容量（最大突发请求数）
+      refill-rate: 1     # 每次补充的令牌数
+      refill-interval-ms: 3000  # 补充间隔（毫秒）→ 约 20次/分钟
+    global:
+      daily-max: 10000   # 全局每日调用上限（成本预算管控）
 
 spring:
   application:
