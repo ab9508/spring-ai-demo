@@ -5,6 +5,7 @@ import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConf
 import org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableAsync;
 
 /**
  * ============ 双模型配置 ============
@@ -32,6 +33,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 3. ChatClientConfig 根据 app.chat.provider 决定注入哪个 ChatModel
  */
 @Slf4j
+@EnableAsync
 @SpringBootApplication(exclude = {
         ChatClientAutoConfiguration.class,
         OpenAiEmbeddingAutoConfiguration.class

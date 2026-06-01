@@ -102,3 +102,26 @@ INSERT INTO aftersale_ticket (ticket_id, order_id, user_id, type, reason, status
 ('TK-2026042801', 'ORD-002', 'U1001', '换货', '收到的T恤尺码不合适，M码换L码', '已完成', '已安排快递上门取件，新货已发出'),
 ('TK-2026042901', 'ORD-001', 'U1001', '投诉', '快递显示已发货2天但物流无更新', '处理中', '已联系顺丰客服核实，等待反馈'),
 ('TK-2026043001', 'ORD-004', 'U1001', '退货', '鼠标滚轮有问题，使用不顺滑', '待处理', NULL);
+
+-- ============================================================
+-- LLM 调用日志表（供可观测性使用）
+-- ============================================================
+DROP TABLE IF EXISTS llm_call_log CASCADE;
+CREATE TABLE llm_call_log (
+    id              VARCHAR(36) PRIMARY KEY,
+    timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    session_id      VARCHAR(64),
+    question        TEXT,
+    system_prompt   TEXT,
+    response        TEXT,
+    model           VARCHAR(32),
+    token_input     INT DEFAULT 0,
+    token_output    INT DEFAULT 0,
+    latency_ms      INT DEFAULT 0,
+    rag_docs        TEXT,
+    cost            DECIMAL(10,6) DEFAULT 0,
+    success         BOOLEAN DEFAULT TRUE,
+    error_msg       TEXT
+);
+CREATE INDEX idx_llm_log_ts ON llm_call_log(timestamp DESC);
+CREATE INDEX idx_llm_log_session ON llm_call_log(session_id);

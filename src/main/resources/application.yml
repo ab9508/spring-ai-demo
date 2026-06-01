@@ -3,7 +3,10 @@ server:
 
 app:
   chat:
-    provider: ollama     # 切换模型：ollama（qwen2.5:3b本地） | openai（DeepSeek API）
+    provider: ollama     # 切换模型：ollama（qwen2.5:3b本地，失败降级DeepSeek API） | openai（DeepSeek API直连）
+  degradation:
+    timeout: 15s         # 单次模型调用超时时间（超时自动切到降级模型）
+    fallback: "服务繁忙，请稍后再试"  # 全部模型失败时的兜底回复
 
 spring:
   application:
