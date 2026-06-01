@@ -1,5 +1,6 @@
 package com.example.ai.controller;
 
+import com.example.ai.service.PromptGuardService;
 import com.example.ai.service.RagService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -41,12 +42,15 @@ public class RagController {
     private final ChatClient chatClient;      // 对话（DeepSeek）
     private final VectorStore vectorStore;    // 向量检索（底层用 Ollama nomic-embed-text）
     private final RagService ragService;      // 文档处理服务
+    private final PromptGuardService promptGuardService;
 
     public RagController(ChatClient.Builder chatClientBuilder, VectorStore vectorStore,
-                         @Autowired RagService ragService) {
+                         @Autowired RagService ragService,
+                         PromptGuardService promptGuardService) {
         this.chatClient = chatClientBuilder.build();
         this.vectorStore = vectorStore;
         this.ragService = ragService;
+        this.promptGuardService = promptGuardService;
     }
 
     /**
@@ -92,6 +96,11 @@ public class RagController {
      */
     @GetMapping("/ask")
     public String ask(@RequestParam String question) {
+        PromptGuardService.GuardResult guard = promptGuardService.check(question);
+        if (guard.isBlocked()) {
+            return guard.reason();
+        }
+
         long t1 = System.currentTimeMillis();
         log.info("【T1】rag/ask请求进入 question={}", question);
 

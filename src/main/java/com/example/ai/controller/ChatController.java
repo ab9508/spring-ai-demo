@@ -1,5 +1,6 @@
 package com.example.ai.controller;
 
+import com.example.ai.service.PromptGuardService;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -26,9 +27,12 @@ import java.util.Objects;
 public class ChatController {
 
     private final ChatClient chatClient;
+    private final PromptGuardService promptGuardService;
 
-    public ChatController(ChatClient.Builder chatClientBuilder) {
+    public ChatController(ChatClient.Builder chatClientBuilder,
+                          PromptGuardService promptGuardService) {
         this.chatClient = chatClientBuilder.build();
+        this.promptGuardService = promptGuardService;
     }
 
     /**
@@ -36,6 +40,10 @@ public class ChatController {
      */
     @GetMapping("/chat")
     public String chat(@RequestParam String message) {
+        PromptGuardService.GuardResult guard = promptGuardService.check(message);
+        if (guard.isBlocked()) {
+            return guard.reason();
+        }
         long t1 = System.currentTimeMillis();
         log.info("【T1】chat请求进入 message={}", message);
 
@@ -54,6 +62,10 @@ public class ChatController {
      */
     @GetMapping("/chat/role")
     public String chatWithRole(@RequestParam String message) {
+        PromptGuardService.GuardResult guard = promptGuardService.check(message);
+        if (guard.isBlocked()) {
+            return guard.reason();
+        }
         long t1 = System.currentTimeMillis();
         log.info("【T1】chatRole请求进入 message={}", message);
 
@@ -74,6 +86,14 @@ public class ChatController {
      */
     @PostMapping(value = "/api/chat", produces = "application/json;charset=UTF-8")
     public ChatResponse chatApi(@RequestBody ChatRequest request) {
+        PromptGuardService.GuardResult guard = promptGuardService.check(request.getMessage());
+        if (guard.isBlocked()) {
+            ChatResponse blocked = new ChatResponse();
+            blocked.setContent(guard.reason());
+            blocked.setConversationId(request.getConversationId());
+            blocked.setTimestamp(System.currentTimeMillis());
+            return blocked;
+        }
         long t1 = System.currentTimeMillis();
         log.info("【API】chat请求进入 message={}, conversationId={}",
                 request.getMessage(), request.getConversationId());
@@ -112,6 +132,10 @@ public class ChatController {
      */
     @PostMapping(value = "/api/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatApiStream(@RequestBody ChatRequest request) {
+        PromptGuardService.GuardResult guard = promptGuardService.check(request.getMessage());
+        if (guard.isBlocked()) {
+            return Flux.just(guard.reason());
+        }
         log.info("【API-STREAM】请求进入 message={}", request.getMessage());
 
         return chatClient.prompt()
