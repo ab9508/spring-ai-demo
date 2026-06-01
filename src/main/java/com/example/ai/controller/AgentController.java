@@ -3,6 +3,7 @@ package com.example.ai.controller;
 import com.example.ai.advisor.CustomRagAdvisor;
 import com.example.ai.entity.IntentRecord;
 import com.example.ai.service.PromptGuardService;
+import com.example.ai.service.SessionStateManager;
 import com.example.ai.tool.OrderTools;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +49,7 @@ public class AgentController {
     private final ChatClient chatClient;          // 带工具+记忆+RAG的（用于 /chat /chat/stream）
     private final ChatClient jsonOnlyClient;       // 纯净的（用于 /analyzeIntent）
     private final PromptGuardService promptGuardService;
+    private final SessionStateManager sessionStateManager;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // 注入 OrderTools 实例 + ChatMemory + ChatModel + VectorStore
@@ -56,9 +58,11 @@ public class AgentController {
                            ChatMemory chatMemory,
                            ChatModel chatModel,
                            VectorStore vectorStore,
-                           PromptGuardService promptGuardService) {
+                           PromptGuardService promptGuardService,
+                           SessionStateManager sessionStateManager) {
         log.info("当前使用的 ChatMemory 实现类：" + chatMemory.getClass().getName());
         this.promptGuardService = promptGuardService;
+        this.sessionStateManager = sessionStateManager;
         // jsonOnlyClient：用 ChatModel 创建全新 builder，完全不受下面工具配置的影响
         // ChatClient.builder(chatModel) 每次返回全新的 Builder，无任何历史配置
         this.jsonOnlyClient = ChatClient.builder(chatModel).build();
@@ -96,6 +100,20 @@ public class AgentController {
             blocked.setConversationId(conversationId);
             blocked.setTimestamp(System.currentTimeMillis());
             return blocked;
+        }
+
+        // 记录用户操作到业务状态管理
+        try {
+            String businessContext = sessionStateManager.getField(conversationId, "lastAction");
+            if (message.contains("订单") || message.contains("ORD-")) {
+                sessionStateManager.recordAction(conversationId, "query_order", message);
+            } else if (message.contains("退货") || message.contains("退款")) {
+                sessionStateManager.recordAction(conversationId, "return", message);
+            } else if (message.contains("物流") || message.contains("快递")) {
+                sessionStateManager.recordAction(conversationId, "logistics", message);
+            }
+        } catch (Exception e) {
+            log.debug("业务状态记录异常(不影响主流程): {}", e.getMessage());
         }
 
         // .call() 返回 ChatResponse，包含完整元数据（content / metadata / usage）

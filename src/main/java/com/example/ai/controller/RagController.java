@@ -2,6 +2,7 @@ package com.example.ai.controller;
 
 import com.example.ai.service.PromptGuardService;
 import com.example.ai.service.RagService;
+import com.example.ai.service.SemanticCacheService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
@@ -43,14 +44,17 @@ public class RagController {
     private final VectorStore vectorStore;    // 向量检索（底层用 Ollama nomic-embed-text）
     private final RagService ragService;      // 文档处理服务
     private final PromptGuardService promptGuardService;
+    private final SemanticCacheService semanticCacheService;
 
     public RagController(ChatClient.Builder chatClientBuilder, VectorStore vectorStore,
                          @Autowired RagService ragService,
-                         PromptGuardService promptGuardService) {
+                         PromptGuardService promptGuardService,
+                         SemanticCacheService semanticCacheService) {
         this.chatClient = chatClientBuilder.build();
         this.vectorStore = vectorStore;
         this.ragService = ragService;
         this.promptGuardService = promptGuardService;
+        this.semanticCacheService = semanticCacheService;
     }
 
     /**
@@ -104,7 +108,14 @@ public class RagController {
         long t1 = System.currentTimeMillis();
         log.info("【T1】rag/ask请求进入 question={}", question);
 
-        // ① 向量检索：找最相关的 5 个文档片段
+        // ① 语义缓存查询（相同/相似问题直接返回，省一次 LLM 调用）
+        String cached = semanticCacheService.get(question);
+        if (cached != null) {
+            log.info("【T1-cache】语义缓存命中, 省去向量检索+LLM调用");
+            return cached;
+        }
+
+        // ② 向量检索：找最相关的 5 个文档片段
         //    similarityThreshold=0.3: bge-large-zh-v1.5 分数偏低，用0.3配合正排保证覆盖率
         List<Document> relevantDocs = vectorStore.similaritySearch(
                 SearchRequest.builder()
@@ -131,6 +142,12 @@ public class RagController {
                 .call()
                 .content();
         long t3 = System.currentTimeMillis();
+
+        // ⑤ 写入语义缓存（供后续相同/相似问题直接命中）
+        if (content != null && !content.isBlank()) {
+            semanticCacheService.put(question, content);
+        }
+
         log.info("【ask】回复==》{}", content);
         log.info("【T3】rag/ask请求完成 总耗时{}ms (RAG检索:{}ms | DeepSeek生成:{}ms)",
                 t3 - t1, t2 - t1, t3 - t2);
