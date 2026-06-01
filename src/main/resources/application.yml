@@ -3,7 +3,7 @@ server:
 
 app:
   chat:
-    provider: openai    # 切换模型：ollama（本地免费，内存不足运行慢,需要删除<think></think>之间内容） | openai（DeepSeek API）
+    provider: ollama     # 切换模型：ollama（qwen2.5:3b本地） | openai（DeepSeek API）
 
 spring:
   application:
@@ -31,12 +31,12 @@ spring:
         initialize-schema: true    # 自动创建向量表（首次启动用）
         dimensions: 1024            # bge-large-zh-v1.5 的维度
 
-    # ============ Ollama 本地模型（默认使用，不支持tool） HTTP 400 - {"error":"registry.ollama.ai/library/deepseek-r1:8b does not support tools"} ============
+    # ============ Ollama 本地模型（qwen2.5:3b） ============
     ollama:
       base-url: http://localhost:11434
       chat:
         options:
-          model: deepseek-r1:8b
+          model: qwen2.5:3b
           temperature: 0.7
       embedding:
         options:
