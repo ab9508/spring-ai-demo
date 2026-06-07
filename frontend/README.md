@@ -147,6 +147,9 @@ A: 修改 `src/utils/api.js` 中的 `BASE_URL`，将8080修改为实际端口。
 A: 运行构建命令：
 ```bash
 # H5端
+npm install --legacy-peer-deps
 npm run build:h5
+
+C:\Users\ASUS\WorkBuddy\20260425094145\spring-ai-demo\frontend\chat.html
 # 生成的文件在 dist/build/h5 目录
 ```

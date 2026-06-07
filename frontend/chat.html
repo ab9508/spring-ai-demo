@@ -78,6 +78,17 @@
             background: linear-gradient(135deg, #4A90E2, #357ABD);
             color: white;
         }
+        .message-bubble.handoff {
+            background: #FFF3E0;
+            color: #E65100;
+            border-left: 4px solid #FF9800;
+        }
+        .handoff-btn {
+            display: inline-block; margin-top: 8px; padding: 6px 16px;
+            background: #FF9800; color: #fff; border: none; border-radius: 4px;
+            cursor: pointer; font-size: 13px;
+        }
+        .handoff-btn:hover { background: #F57C00; }
         .message-time { font-size: 12px; color: #999; margin-top: 5px; display: block; }
 
         .loading-dots { display: flex; gap: 5px; padding: 10px 0; }
@@ -345,7 +356,18 @@
                 if (!response.ok) throw new Error('HTTP ' + response.status);
 
                 var data = await response.json();
-                bubble.textContent = data.content || '无回复';
+
+                // ====== 判断响应类型 ======
+                if (data.type === 'handoff') {
+                    // 转人工：显示特殊样式的气泡 + 按钮
+                    bubble.className = 'message-bubble handoff';
+                    bubble.innerHTML = '<span style="font-weight:bold">⚠️ 转人工客服</span><br>'
+                        + (data.content || '')
+                        + '<br><button class="handoff-btn" onclick="alert(\'正在为您连接人工客服，请稍候...\')">📞 联系人工客服</button>';
+                } else {
+                    // 正常回答
+                    bubble.textContent = data.content || '无回复';
+                }
 
                 connStatus.textContent = '\u25cf 已连接';
                 connStatus.className = 'status-ok';

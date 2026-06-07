@@ -175,6 +175,20 @@ public class ChatController {
         private String content;
         private String conversationId;
         private Long timestamp;
+        /** 响应类型：answer(正常回答) | handoff(转人工) */
+        private String type = "answer";
+        /** 转人工原因（仅 type=handoff 时有值） */
+        private String reason;
+
+        /** 创建转人工响应 */
+        public static ChatResponse handoff(String content, String reason) {
+            ChatResponse r = new ChatResponse();
+            r.setContent(content);
+            r.setType("handoff");
+            r.setReason(reason);
+            r.setTimestamp(System.currentTimeMillis());
+            return r;
+        }
     }
 
     @Data

@@ -1,5 +1,6 @@
 package com.example.ai.controller;
 
+import com.example.ai.entity.RagResponse;
 import com.example.ai.service.PromptGuardService;
 import com.example.ai.service.QueryRewriteService;
 import com.example.ai.service.RagService;
@@ -8,7 +9,6 @@ import com.example.ai.service.SemanticCacheService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -100,17 +100,21 @@ public class RagController {
      * RAG 问答
      * GET http://localhost:8080/rag/ask?question=你的问题
      * <p>
+     * 返回格式（JSON）：
+     * - 正常回答：{"type":"answer", "content":"...", "reason":null}
+     * - 转人工：  {"type":"handoff", "content":"...", "reason":"知识库无匹配结果"}
+     * <p>
      * 流程：
      * ① 用户提问
-     * ② vectorStore.similaritySearch → Ollama nomic-embed-text 把问题转向量 → 找最相关的文档片段
-     * ③ 把片段拼成上下文
-     * ④ chatClient → DeepSeek 基于上下文生成最终回答
+     * ② filterByRelativeScore → 三规则过滤（绝对值/分差/相对分数）
+     * ③ 无匹配 → 直接返回转人工，不走 LLM
+     * ④ 有匹配 → DeepSeek 基于上下文生成回答
      */
     @GetMapping("/ask")
-    public String ask(@RequestParam String question) {
+    public RagResponse ask(@RequestParam String question) {
         PromptGuardService.GuardResult guard = promptGuardService.check(question);
         if (guard.isBlocked()) {
-            return guard.reason();
+            return RagResponse.handoff(guard.reason(), "Prompt注入被拦截");
         }
 
         long t1 = System.currentTimeMillis();
@@ -120,34 +124,32 @@ public class RagController {
         String cached = semanticCacheService.get(question);
         if (cached != null) {
             log.info("【T1-cache】语义缓存命中, 省去向量检索+LLM调用");
-            return cached;
+            return RagResponse.answer(cached);
         }
 
         // ② 查询改写（消解指代、补全模糊查询）
         String rewrittenQuery = queryRewriteService.rewrite(question, "");
         log.info("【T2-rewrite】改写前='{}' 改写后='{}'", question, rewrittenQuery);
 
-        // ③ 向量检索
-        List<Document> relevantDocs = vectorStore.similaritySearch(
-                SearchRequest.builder()
-                        .query(rewrittenQuery)
-                        .topK(10)               // 多取一些给重排序留空间
-                        .similarityThreshold(0.3)
-                        .build()
-        );
+        // ③ 相对分数过滤检索（三规则：绝对值<0.45拒绝 / 分差<0.05拒绝 / 只保留top1*0.85以上chunk）
+        List<Document> filteredDocs = ragService.filterByRelativeScore(rewrittenQuery);
         long t2 = System.currentTimeMillis();
-        log.info("【T3】RAG向量检索完成 耗时{}ms 检索到{}个片段", t2 - t1, relevantDocs.size());
+        log.info("【T3】相对分数过滤完成 耗时{}ms 通过{}个片段", t2 - t1, filteredDocs.size());
 
-        // ④ 重排序（取 Top-3）
-        List<Document> rerankedDocs = reRankService.reRankByScore(relevantDocs, 0.3);
-        log.info("【T4】重排序完成 Top-{}", rerankedDocs.size());
+        // ====== 知识库无匹配 → 转人工 ======
+        if (filteredDocs.isEmpty()) {
+            log.warn("【转人工】知识库无匹配结果 question='{}' rewritten='{}'", question, rewrittenQuery);
+            return RagResponse.handoff(
+                    "抱歉，知识库中没有找到相关的信息，已为您转接人工客服处理。"
+            );
+        }
 
-        // ⑤ 拼装上下文
-        String context = rerankedDocs.stream()
+        // ④ 拼装上下文
+        String context = filteredDocs.stream()
                 .map(Document::getText)
                 .collect(Collectors.joining("\n\n---\n\n"));
 
-        // ③ DeepSeek 基于上下文回答（这里是 ChatClient，走 DeepSeek）
+        // ⑤ DeepSeek 基于上下文回答
         String content = chatClient.prompt()
                 .system("你是一个专业知识库助手。请严格基于以下参考资料回答用户问题。" +
                         "如果参考资料中没有相关信息，请明确告知用户。" +
@@ -158,15 +160,15 @@ public class RagController {
                 .content();
         long t3 = System.currentTimeMillis();
 
-        // ⑤ 写入语义缓存（供后续相同/相似问题直接命中）
+        // ⑥ 写入语义缓存（供后续相同/相似问题直接命中）
         if (content != null && !content.isBlank()) {
             semanticCacheService.put(question, content);
         }
 
         log.info("【ask】回复==》{}", content);
-        log.info("【T3】rag/ask请求完成 总耗时{}ms (RAG检索:{}ms | DeepSeek生成:{}ms)",
+        log.info("【T3】rag/ask请求完成 总耗时{}ms (检索过滤:{}ms | DeepSeek生成:{}ms)",
                 t3 - t1, t2 - t1, t3 - t2);
-        return content;
+        return RagResponse.answer(content);
     }
 
     /**

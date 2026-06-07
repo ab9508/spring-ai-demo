@@ -3,6 +3,7 @@ package com.example.ai.controller;
 import com.example.ai.advisor.CustomRagAdvisor;
 import com.example.ai.entity.IntentRecord;
 import com.example.ai.service.PromptGuardService;
+import com.example.ai.service.RagService;
 import com.example.ai.service.SessionStateManager;
 import com.example.ai.tool.OrderTools;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -50,6 +51,7 @@ public class AgentController {
     private final ChatClient jsonOnlyClient;       // 纯净的（用于 /analyzeIntent）
     private final PromptGuardService promptGuardService;
     private final SessionStateManager sessionStateManager;
+    private final RagService ragService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // 注入 OrderTools 实例 + ChatMemory + ChatModel + VectorStore
@@ -59,10 +61,12 @@ public class AgentController {
                            ChatModel chatModel,
                            VectorStore vectorStore,
                            PromptGuardService promptGuardService,
-                           SessionStateManager sessionStateManager) {
+                           SessionStateManager sessionStateManager,
+                           RagService ragService) {
         log.info("当前使用的 ChatMemory 实现类：" + chatMemory.getClass().getName());
         this.promptGuardService = promptGuardService;
         this.sessionStateManager = sessionStateManager;
+        this.ragService = ragService;
         // jsonOnlyClient：用 ChatModel 创建全新 builder，完全不受下面工具配置的影响
         // ChatClient.builder(chatModel) 每次返回全新的 Builder，无任何历史配置
         this.jsonOnlyClient = ChatClient.builder(chatModel).build();
@@ -114,6 +118,20 @@ public class AgentController {
             }
         } catch (Exception e) {
             log.debug("业务状态记录异常(不影响主流程): {}", e.getMessage());
+        }
+
+        // ====== 知识库预检查：非订单/非工具类问题，RAG 无匹配则转人工 ======
+        if (!message.contains("订单") && !message.contains("ORD-")
+                && !message.contains("库存") && !message.contains("售后")
+                && !message.contains("退货") && !message.contains("物流")) {
+            var docs = ragService.filterByRelativeScore(message);
+            if (docs.isEmpty()) {
+                log.warn("【转人工】知识库无匹配 conversationId={}, message={}", conversationId, message);
+                return ChatController.ChatResponse.handoff(
+                        "抱歉，知识库中没有相关的信息，已为您转接人工客服处理。",
+                        "知识库无匹配结果"
+                );
+            }
         }
 
         // .call() 返回 ChatResponse，包含完整元数据（content / metadata / usage）
