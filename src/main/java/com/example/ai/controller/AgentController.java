@@ -1,7 +1,9 @@
 package com.example.ai.controller;
 
 import com.example.ai.advisor.CustomRagAdvisor;
+import com.example.ai.aspect.LLMCallLoggerAspect;
 import com.example.ai.entity.IntentRecord;
+import com.example.ai.service.HallucinationDetector;
 import com.example.ai.service.PromptGuardService;
 import com.example.ai.service.RagService;
 import com.example.ai.service.SessionStateManager;
@@ -13,6 +15,8 @@ import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.tool.method.MethodToolCallbackProvider;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
@@ -52,6 +56,7 @@ public class AgentController {
     private final PromptGuardService promptGuardService;
     private final SessionStateManager sessionStateManager;
     private final RagService ragService;
+    private final HallucinationDetector hallucinationDetector;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // 注入 OrderTools 实例 + ChatMemory + ChatModel + VectorStore
@@ -62,19 +67,25 @@ public class AgentController {
                            VectorStore vectorStore,
                            PromptGuardService promptGuardService,
                            SessionStateManager sessionStateManager,
-                           RagService ragService) {
+                           RagService ragService,
+                           HallucinationDetector hallucinationDetector) {
         log.info("当前使用的 ChatMemory 实现类：" + chatMemory.getClass().getName());
         this.promptGuardService = promptGuardService;
         this.sessionStateManager = sessionStateManager;
         this.ragService = ragService;
+        this.hallucinationDetector = hallucinationDetector;
         // jsonOnlyClient：用 ChatModel 创建全新 builder，完全不受下面工具配置的影响
         // ChatClient.builder(chatModel) 每次返回全新的 Builder，无任何历史配置
         this.jsonOnlyClient = ChatClient.builder(chatModel).build();
         log.info("【agent】jsonOnlyClient 初始化完成（无工具/无记忆，专用于结构化输出）");
 
         // chatClient：带 Tool Calling + ChatMemory + 自定义 RAG Advisor
+        ToolCallback[] toolCallbacks = MethodToolCallbackProvider.builder()
+                .toolObjects(orderTools).build().getToolCallbacks();
+        log.info("【agent】OrderTools 检测到 {} 个 @Tool 方法", toolCallbacks.length);
+
         this.chatClient = chatClientBuilder
-                .defaultTools(orderTools)
+                .defaultToolCallbacks(toolCallbacks)
                 .defaultAdvisors(
                         // advisor执行顺序受order影响，与代码先后无关
                         // 自定义 RAG Advisor：自动检索向量库并注入上下文（含相对分数过滤）
@@ -107,23 +118,29 @@ public class AgentController {
         }
 
         // 记录用户操作到业务状态管理
-        try {
-            String businessContext = sessionStateManager.getField(conversationId, "lastAction");
-            if (message.contains("订单") || message.contains("ORD-")) {
-                sessionStateManager.recordAction(conversationId, "query_order", message);
-            } else if (message.contains("退货") || message.contains("退款")) {
-                sessionStateManager.recordAction(conversationId, "return", message);
-            } else if (message.contains("物流") || message.contains("快递")) {
-                sessionStateManager.recordAction(conversationId, "logistics", message);
-            }
-        } catch (Exception e) {
-            log.debug("业务状态记录异常(不影响主流程): {}", e.getMessage());
+        sessionStateManager.recordAction(conversationId, "user_message", message);
+
+        // ====== 意图识别（一次 LLM 调用，同时服务置信度门禁 + 路由决策） ======
+        IntentRecord intent = analyzeIntent(message);
+        log.info("【意图识别】intent={} confidence={} params={}",
+                intent.intent(), String.format("%.2f", intent.confidence()), intent.params());
+
+        // ====== ① 置信度门禁 < 55% → 转人工 ======
+        if (intent.confidence() < 0.55) {
+            log.warn("【置信度门禁】意图={} 置信度={} 低于阈值, conversationId={}",
+                    intent.intent(), String.format("%.2f", intent.confidence()), conversationId);
+            return ChatController.ChatResponse.handoff(
+                    "抱歉，我没太理解您的意思。请详细描述您的问题，" +
+                    "例如「查询订单」「查看库存」「申请售后」「咨询商品」，或直接说「转人工客服」。",
+                    "意图置信度过低(" + String.format("%.2f", intent.confidence()) + ")"
+            );
         }
 
-        // ====== 知识库预检查：非订单/非工具类问题，RAG 无匹配则转人工 ======
-        if (!message.contains("订单") && !message.contains("ORD-")
-                && !message.contains("库存") && !message.contains("售后")
-                && !message.contains("退货") && !message.contains("物流")) {
+        // ====== ② 意图路由：工具类意图跳过 RAG，rag_query 才走知识库 ======
+        if ("query_order".equals(intent.intent()) || "query_stock".equals(intent.intent())
+                || "after_sale".equals(intent.intent())) {
+            log.info("【路由】工具类意图={}, 跳过 RAG 检查", intent.intent());
+        } else if ("rag_query".equals(intent.intent())) {
             var docs = ragService.filterByRelativeScore(message);
             if (docs.isEmpty()) {
                 log.warn("【转人工】知识库无匹配 conversationId={}, message={}", conversationId, message);
@@ -132,20 +149,34 @@ public class AgentController {
                         "知识库无匹配结果"
                 );
             }
+            log.info("【路由】RAG 意图={}, 知识库匹配 {} 个片段", intent.intent(), docs.size());
+        } else {
+            // unknown 或其他 → 转人工
+            log.warn("【路由】无法处理的意图={}→转人工", intent.intent());
+            return ChatController.ChatResponse.handoff(
+                    "抱歉，我暂时无法处理这个问题，请尝试其他描述方式或转人工客服。",
+                    "无匹配意图类型(" + intent.intent() + ")"
+            );
         }
 
-        // .call() 返回 ChatResponse，包含完整元数据（content / metadata / usage）
-        ChatResponse chatResponse = chatClient.prompt()
-                .system(buildSystemPrompt())
-                .user(message)
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
-                .call()
-                .chatResponse();
+        // 记录业务意图到状态管理
+        sessionStateManager.recordAction(conversationId, intent.intent(), intent.params());
 
-        String content = chatResponse.getResult().getOutput().getText();
+        // 设置会话ID（LLMCallLoggerAspect 异步日志用）
+        LLMCallLoggerAspect.setSessionId(conversationId);
+        try {
+            // .call() 返回 ChatResponse，包含完整元数据（content / metadata / usage）
+            ChatResponse chatResponse = chatClient.prompt()
+                    .system(buildSystemPrompt())
+                    .user(message)
+                    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
+                    .call()
+                    .chatResponse();
 
-        // 打印完整响应信息（便于调试和面试理解）
-        log.info("【ChatResponse 完整信息】");
+            String content = chatResponse.getResult().getOutput().getText();
+
+            // 打印完整响应信息（便于调试和面试理解）
+            log.info("【ChatResponse 完整信息】");
         log.info("  content = {}", content);
         log.info("  model   = {}", chatResponse.getMetadata().getModel());
         log.info("  finishReason = {}", chatResponse.getResult().getMetadata().getFinishReason());
@@ -156,6 +187,16 @@ public class AgentController {
         }
         log.info("  metadata = {}", chatResponse.getMetadata());
 
+        // ====== 后置幻觉检测（Agent场景：无RAG上下文，仅做日志监控，不拦截）======
+        HallucinationDetector.DetectionResult agentDetect =
+                hallucinationDetector.detect(message, null, content);
+        if (!agentDetect.passed()) {
+            // Agent场景暂不拦截（tools返回数据不在此上下文），仅记录监控日志
+            log.warn("【后置检测-监控】Agent回答可能蕴含幻觉 content='{}' reason='{}'",
+                    content.length() > 100 ? content.substring(0, 100) + "..." : content,
+                    agentDetect.reason());
+        }
+
         long t2 = System.currentTimeMillis();
         log.info("【T2】请求完成 总耗时{}ms", t2 - t1);
 
@@ -164,6 +205,9 @@ public class AgentController {
         resp.setConversationId(request.getConversationId());
         resp.setTimestamp(System.currentTimeMillis());
         return resp;
+        } finally {
+            LLMCallLoggerAspect.clearSessionId();
+        }
     }
 
     /**

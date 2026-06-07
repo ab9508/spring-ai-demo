@@ -1,6 +1,7 @@
 package com.example.ai.controller;
 
 import com.example.ai.entity.RagResponse;
+import com.example.ai.service.HallucinationDetector;
 import com.example.ai.service.PromptGuardService;
 import com.example.ai.service.QueryRewriteService;
 import com.example.ai.service.RagService;
@@ -49,13 +50,15 @@ public class RagController {
     private final SemanticCacheService semanticCacheService;
     private final QueryRewriteService queryRewriteService;
     private final ReRankService reRankService;
+    private final HallucinationDetector hallucinationDetector;
 
     public RagController(ChatClient.Builder chatClientBuilder, VectorStore vectorStore,
                          @Autowired RagService ragService,
                          PromptGuardService promptGuardService,
                          SemanticCacheService semanticCacheService,
                          QueryRewriteService queryRewriteService,
-                         ReRankService reRankService) {
+                         ReRankService reRankService,
+                         HallucinationDetector hallucinationDetector) {
         this.chatClient = chatClientBuilder.build();
         this.vectorStore = vectorStore;
         this.ragService = ragService;
@@ -63,6 +66,7 @@ public class RagController {
         this.semanticCacheService = semanticCacheService;
         this.queryRewriteService = queryRewriteService;
         this.reRankService = reRankService;
+        this.hallucinationDetector = hallucinationDetector;
     }
 
     /**
@@ -159,6 +163,19 @@ public class RagController {
                 .call()
                 .content();
         long t3 = System.currentTimeMillis();
+
+        // ====== 后置幻觉检测 ======
+        if (content != null && !content.isBlank()) {
+            HallucinationDetector.DetectionResult detectResult =
+                    hallucinationDetector.detect(question, context, content);
+            if (!detectResult.passed()) {
+                log.warn("【后置检测】拦截幻觉回答 question='{}' reason='{}'", question, detectResult.reason());
+                return RagResponse.handoff(
+                        "抱歉，我无法确认这个回答的准确性，已为您转接人工客服核实。",
+                        "后置检测拦截(" + detectResult.reason() + ")"
+                );
+            }
+        }
 
         // ⑥ 写入语义缓存（供后续相同/相似问题直接命中）
         if (content != null && !content.isBlank()) {

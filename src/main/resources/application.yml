@@ -73,3 +73,6 @@ logging:
     com.example.ai.config: DEBUG
     com.example.ai.tool: DEBUG
     com.example.ai.controller: DEBUG
+    org.springframework.ai: DEBUG
+    org.springframework.ai.chat.model.tool: DEBUG   # 工具调用层
+    org.springframework.ai.chat.model: DEBUG         # 模型请求层

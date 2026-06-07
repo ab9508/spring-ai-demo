@@ -14,17 +14,19 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * LLM 调用日志切面
  * 拦截 ChatModel.call() —— 所有 ChatClient 调用的底层入口，
- * 记录完整的输入输出、耗时、token 消耗，异步写入数据库。
+ * 记录完整的输入输出、耗时、token 消耗、会话ID，异步写入数据库。
  * <p>
  * 数据流向：
- * 用户请求 → ChatClient → [AOP拦截] → LLM → [AOP拦截] → 异步写DB
- * 不影响主流程，日志写入失败不打乱业务。
+ * AgentController → [setSessionId()] → ChatClient → [AOP拦截] → LLM → [AOP拦截] → 异步写DB
+ * <p>
+ * sessionId 通过 ThreadLocal 从 AgentController 传入切面。
  */
 @Slf4j
 @Aspect
@@ -34,8 +36,25 @@ public class LLMCallLoggerAspect {
     private final LLMCallLogDao llmCallLogDao;
     private final ConcurrentHashMap<Integer, Long> recentCalls = new ConcurrentHashMap<>();
 
+    /** 存储当前线程的会话ID（AgentController 在调用 chatClient 前设置） */
+    private static final ThreadLocal<String> currentSessionId = new ThreadLocal<>();
+
     public LLMCallLoggerAspect(LLMCallLogDao llmCallLogDao) {
         this.llmCallLogDao = llmCallLogDao;
+    }
+
+    /**
+     * 在调用 ChatClient 前设置会话ID（由 AgentController/ChatController 调用）
+     */
+    public static void setSessionId(String sessionId) {
+        currentSessionId.set(sessionId);
+    }
+
+    /**
+     * 清除会话ID
+     */
+    public static void clearSessionId() {
+        currentSessionId.remove();
     }
 
     /**
@@ -44,7 +63,7 @@ public class LLMCallLoggerAspect {
      * 注意：Spring CGLIB 代理会导致同一个调用被拦截两次（代理类+实际类），
      * 通过 Prompt identity 去重。
      */
-    @Around("execution(* org.springframework.ai.chat.model.ChatModel.call(org.springframework.ai.chat.prompt.Prompt))")
+    @Around("execution(* org.springframework.ai.chat.model.ChatModel.call(*))")
     public Object logChatModelCall(ProceedingJoinPoint pjp) throws Throwable {
         long start = System.currentTimeMillis();
         boolean success = true;
@@ -80,6 +99,9 @@ public class LLMCallLoggerAspect {
             modelName = target.getClass().getSimpleName();
         }
 
+        // 在同步线程捕获 sessionId（传给 @Async 方法需要提前取值）
+        String sessionId = currentSessionId.get();
+
         Object result = null;
         try {
             result = pjp.proceed();
@@ -90,21 +112,23 @@ public class LLMCallLoggerAspect {
             throw e;
         } finally {
             long elapsed = System.currentTimeMillis() - start;
-            // 异步记录日志
-            saveLogAsync(prompt, result, modelName, (int) elapsed, success, errorMsg);
+            // 异步记录日志（sessionId 在同步线程捕获后传入，避免 @Async 丢失）
+            saveLogAsync(prompt, result, modelName, (int) elapsed, success, errorMsg, sessionId);
         }
     }
 
     @Async("logExecutor")
     protected void saveLogAsync(Prompt prompt, Object result,
                                 String modelName, int latencyMs,
-                                boolean success, String errorMsg) {
+                                boolean success, String errorMsg,
+                                String sessionId) {
         try {
             if (prompt == null) return;
 
             LLMCallLog.LLMCallLogBuilder builder = LLMCallLog.builder()
                     .id(UUID.randomUUID().toString())
-                    .timestamp(OffsetDateTime.now())
+                    .timestamp(OffsetDateTime.now(ZoneOffset.ofHours(8)))  // 固定东八区
+                    .sessionId(sessionId)                                  // 传入的会话ID
                     .model(modelName)
                     .latencyMs(latencyMs)
                     .success(success)
@@ -152,7 +176,7 @@ public class LLMCallLoggerAspect {
             llmCallLogDao.insert(builder.build());
 
         } catch (Exception e) {
-            log.debug("LLM日志异步写入异常(不影响主流程): {}", e.getMessage());
+            log.warn("LLM日志异步写入异常: {}", e.getMessage(), e);
         }
     }
 
