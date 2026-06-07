@@ -3,6 +3,7 @@ package com.example.ai.config;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -86,5 +87,17 @@ public class ChatClientConfig {
                 log.warn("日志队列已满，丢弃一条日志记录"));
         executor.initialize();
         return executor;
+    }
+
+    /**
+     * BGE Embedding 包装器——自动为输入文本添加任务前缀。
+     * 包装 auto-configuration 生成的 EmbeddingModel bean。
+     * @Primary 确保所有依赖注入点使用包装后的版本。
+     */
+    @Bean
+    @Primary
+    public EmbeddingModel embeddingModel(org.springframework.ai.embedding.EmbeddingModel rawEmbeddingModel) {
+        log.info("【配置】EmbeddingModel → BgeEmbeddingModel（自动添加BGE指令前缀）");
+        return new BgeEmbeddingModel(rawEmbeddingModel);
     }
 }

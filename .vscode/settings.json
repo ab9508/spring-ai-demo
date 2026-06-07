@@ -1,0 +1,17 @@
+{
+    "java.compile.nullAnalysis.mode": "automatic",
+    "terminal.integrated.defaultProfile.windows": "Command Prompt",
+    "terminal.integrated.profiles.windows": {
+        "Command Prompt": {
+            "path": "cmd.exe",
+            "args": ["/K", "chcp 65001 >nul"]
+        }
+    },
+    "maven.terminal.customEnv": [
+        {
+            "environmentVariable": "JAVA_TOOL_OPTIONS",
+            "value": "-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8"
+        }
+    ],
+    "java.configuration.updateBuildConfiguration": "interactive"
+}

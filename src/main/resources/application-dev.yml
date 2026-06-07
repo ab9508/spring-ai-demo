@@ -1,0 +1,16 @@
+# ============================================
+# Dev 环境（ASUS 本机开发）
+# ============================================
+# Ollama、PostgreSQL、Redis 都在本机运行
+# 激活：SPRING_PROFILES_ACTIVE=dev
+# ============================================
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/mydb
+  data:
+    redis:
+      host: localhost
+  ai:
+    ollama:
+      base-url: http://localhost:11434

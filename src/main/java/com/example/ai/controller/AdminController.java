@@ -2,6 +2,7 @@ package com.example.ai.controller;
 
 import com.example.ai.dao.LLMCallLogDao;
 import com.example.ai.entity.LLMCallLog;
+import com.example.ai.service.ABTestService;
 import com.example.ai.service.RagEvaluator;
 import com.example.ai.service.SemanticCacheService;
 import lombok.extern.slf4j.Slf4j;
@@ -22,13 +23,16 @@ public class AdminController {
     private final LLMCallLogDao llmCallLogDao;
     private final RagEvaluator ragEvaluator;
     private final SemanticCacheService semanticCacheService;
+    private final ABTestService abTestService;
 
     public AdminController(LLMCallLogDao llmCallLogDao,
                            RagEvaluator ragEvaluator,
-                           SemanticCacheService semanticCacheService) {
+                           SemanticCacheService semanticCacheService,
+                           ABTestService abTestService) {
         this.llmCallLogDao = llmCallLogDao;
         this.ragEvaluator = ragEvaluator;
         this.semanticCacheService = semanticCacheService;
+        this.abTestService = abTestService;
     }
 
     /**
@@ -94,6 +98,51 @@ public class AdminController {
         Map<String, String> result = new HashMap<>();
         result.put("status", "ok");
         result.put("message", "语义缓存已清空");
+        return result;
+    }
+
+    // ===== A/B 测试 =====
+
+    /**
+     * 查看当前 A/B 测试状态
+     * GET /admin/abtest
+     */
+    @GetMapping("/abtest")
+    public Map<String, Object> abTestStatus() {
+        Map<String, Object> result = new HashMap<>();
+        result.put("enabled", abTestService.isEnabled());
+        result.put("config", abTestService.getCurrentConfig());
+        result.put("group", abTestService.getGroup("test-user"));
+        return result;
+    }
+
+    /**
+     * 开始一个 A/B 试验
+     * POST /admin/abtest/start?name=test_v1&promptVariant=prompt_v2&retrieval=vector_only&model=qwen2.5:3b
+     */
+    @PostMapping("/abtest/start")
+    public Map<String, String> startABTest(
+            @RequestParam String name,
+            @RequestParam(defaultValue = "prompt_v1") String promptVariant,
+            @RequestParam(defaultValue = "vector_only") String retrieval,
+            @RequestParam(defaultValue = "qwen2.5:3b") String model) {
+        abTestService.startExperiment(name, promptVariant, retrieval, model);
+        Map<String, String> result = new HashMap<>();
+        result.put("status", "ok");
+        result.put("experiment", name);
+        return result;
+    }
+
+    /**
+     * 停止 A/B 测试
+     * POST /admin/abtest/stop
+     */
+    @PostMapping("/abtest/stop")
+    public Map<String, String> stopABTest() {
+        abTestService.stopExperiment();
+        Map<String, String> result = new HashMap<>();
+        result.put("status", "ok");
+        result.put("message", "A/B 测试已停止");
         return result;
     }
 }

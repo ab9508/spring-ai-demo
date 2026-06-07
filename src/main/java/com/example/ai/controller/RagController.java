@@ -1,7 +1,9 @@
 package com.example.ai.controller;
 
 import com.example.ai.service.PromptGuardService;
+import com.example.ai.service.QueryRewriteService;
 import com.example.ai.service.RagService;
+import com.example.ai.service.ReRankService;
 import com.example.ai.service.SemanticCacheService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -45,16 +47,22 @@ public class RagController {
     private final RagService ragService;      // 文档处理服务
     private final PromptGuardService promptGuardService;
     private final SemanticCacheService semanticCacheService;
+    private final QueryRewriteService queryRewriteService;
+    private final ReRankService reRankService;
 
     public RagController(ChatClient.Builder chatClientBuilder, VectorStore vectorStore,
                          @Autowired RagService ragService,
                          PromptGuardService promptGuardService,
-                         SemanticCacheService semanticCacheService) {
+                         SemanticCacheService semanticCacheService,
+                         QueryRewriteService queryRewriteService,
+                         ReRankService reRankService) {
         this.chatClient = chatClientBuilder.build();
         this.vectorStore = vectorStore;
         this.ragService = ragService;
         this.promptGuardService = promptGuardService;
         this.semanticCacheService = semanticCacheService;
+        this.queryRewriteService = queryRewriteService;
+        this.reRankService = reRankService;
     }
 
     /**
@@ -115,20 +123,27 @@ public class RagController {
             return cached;
         }
 
-        // ② 向量检索：找最相关的 5 个文档片段
-        //    similarityThreshold=0.3: bge-large-zh-v1.5 分数偏低，用0.3配合正排保证覆盖率
+        // ② 查询改写（消解指代、补全模糊查询）
+        String rewrittenQuery = queryRewriteService.rewrite(question, "");
+        log.info("【T2-rewrite】改写前='{}' 改写后='{}'", question, rewrittenQuery);
+
+        // ③ 向量检索
         List<Document> relevantDocs = vectorStore.similaritySearch(
                 SearchRequest.builder()
-                        .query(question)
-                        .topK(5)
+                        .query(rewrittenQuery)
+                        .topK(10)               // 多取一些给重排序留空间
                         .similarityThreshold(0.3)
                         .build()
         );
         long t2 = System.currentTimeMillis();
-        log.info("【T2】RAG向量检索完成 耗时{}ms 检索到{}个片段", t2 - t1, relevantDocs.size());
+        log.info("【T3】RAG向量检索完成 耗时{}ms 检索到{}个片段", t2 - t1, relevantDocs.size());
 
-        // ② 拼装上下文
-        String context = relevantDocs.stream()
+        // ④ 重排序（取 Top-3）
+        List<Document> rerankedDocs = reRankService.reRankByScore(relevantDocs, 0.3);
+        log.info("【T4】重排序完成 Top-{}", rerankedDocs.size());
+
+        // ⑤ 拼装上下文
+        String context = rerankedDocs.stream()
                 .map(Document::getText)
                 .collect(Collectors.joining("\n\n---\n\n"));
 

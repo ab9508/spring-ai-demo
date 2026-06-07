@@ -1,0 +1,19 @@
+# ============================================
+# Test 环境（另一台机器通过 Tailscale 连接）
+# ============================================
+# 另一台机器通过 Tailscale 访问 ASUS 本机的服务
+# ASUS Tailscale IP: 100.78.110.94
+# 另一台机器 Tailscale IP: 100.124.7.8
+# 两台连接同一 WiFi 热点
+# 激活：SPRING_PROFILES_ACTIVE=test
+# ============================================
+
+spring:
+#  datasource:
+#    url: jdbc:postgresql://100.124.7.8:5432/mydb
+#  data:
+#    redis:
+#      host: 100.124.7.8
+  ai:
+    ollama:
+      base-url: http://100.124.7.8:11434
