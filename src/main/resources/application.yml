@@ -15,6 +15,29 @@ app:
     global:
       daily-max: 10000   # 全局每日调用上限（成本预算管控）
 
+  # ============ RAG 全系统阈值（集中配置，修改后重启生效） ============
+  rag:
+    thresholds:
+      # 检索过滤
+      similarity-min: 0.3
+      top1-absolute: 0.45
+      gap-min: 0.05
+      gap-top1-max: 0.6
+      top1-retain-ratio: 0.85
+      # 意图置信度
+      intent-confidence: 0.55
+      # 语义缓存
+      cache-hit-similarity: 0.92
+      cache-invalidate-similarity: 0.70
+      cache-max-size: 5000
+      cache-ttl-hours: 1
+      # 混合检索
+      vector-weight: 0.6
+      keyword-weight: 0.4
+      # 重排序
+      rerank-min-score: 0.3
+      rerank-top-k: 3
+
 spring:
   application:
     name: spring-ai-demo

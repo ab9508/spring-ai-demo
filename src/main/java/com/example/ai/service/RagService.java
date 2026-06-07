@@ -59,6 +59,7 @@ import java.util.Set;
 public class RagService {
 
     private final VectorStore vectorStore;
+    private final SemanticCacheService semanticCacheService;
 
     // 文件存放目录（改为你自己的路径，确保目录存在且有写入权限）
     private static final String UPLOAD_DIR = "D:\\test";
@@ -75,8 +76,9 @@ public class RagService {
             "txt", "html", "htm", "md", "csv", "json", "xml"
     );
 
-    public RagService(VectorStore vectorStore) {
+    public RagService(VectorStore vectorStore, SemanticCacheService semanticCacheService) {
         this.vectorStore = vectorStore;
+        this.semanticCacheService = semanticCacheService;
     }
 
     /**
@@ -135,6 +137,14 @@ public class RagService {
 
             String result = String.format("文档[%s]处理完成，共 %d 个片段已入库", originalFilename, chunks.size());
             log.info("【upload】{}", result);
+
+            // 按语义相似度失效相关缓存（不相关的缓存保留）
+            // 取所有 chunks 的前 200 字拼接作为语义代表，计算 embedding 做相似度比较
+            String semanticSample = chunks.stream()
+                    .map(doc -> doc.getText().length() > 200 ? doc.getText().substring(0, 200) : doc.getText())
+                    .collect(java.util.stream.Collectors.joining(" "));
+            semanticCacheService.invalidateRelated(semanticSample);
+
             return result;
 
         } finally {

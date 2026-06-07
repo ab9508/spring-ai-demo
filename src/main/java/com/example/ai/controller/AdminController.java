@@ -5,12 +5,12 @@ import com.example.ai.entity.LLMCallLog;
 import com.example.ai.service.ABTestService;
 import com.example.ai.service.RagEvaluator;
 import com.example.ai.service.SemanticCacheService;
+import com.example.ai.config.RagThresholdConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 管理接口——LLM 调用日志查询、RAG 评估、缓存管理
@@ -24,15 +24,18 @@ public class AdminController {
     private final RagEvaluator ragEvaluator;
     private final SemanticCacheService semanticCacheService;
     private final ABTestService abTestService;
+    private final RagThresholdConfig thresholdConfig;
 
     public AdminController(LLMCallLogDao llmCallLogDao,
                            RagEvaluator ragEvaluator,
                            SemanticCacheService semanticCacheService,
-                           ABTestService abTestService) {
+                           ABTestService abTestService,
+                           RagThresholdConfig thresholdConfig) {
         this.llmCallLogDao = llmCallLogDao;
         this.ragEvaluator = ragEvaluator;
         this.semanticCacheService = semanticCacheService;
         this.abTestService = abTestService;
+        this.thresholdConfig = thresholdConfig;
     }
 
     /**
@@ -144,5 +147,55 @@ public class AdminController {
         result.put("status", "ok");
         result.put("message", "A/B 测试已停止");
         return result;
+    }
+
+    // ===== 参数评估 =====
+
+    /**
+     * 查看当前所有阈值配置
+     * GET /admin/thresholds
+     */
+    @GetMapping("/thresholds")
+    public RagThresholdConfig getThresholds() {
+        return thresholdConfig;
+    }
+
+    /**
+     * 参数扫描：遍历 top1Absolute 的不同取值，评估对 recall 的影响
+     * GET /admin/thresholds/sweep
+     */
+    @GetMapping("/thresholds/sweep")
+    public List<Map<String, Object>> sweepTop1Threshold() {
+        List<RagEvaluator.TestCase> testCases = List.of(
+                new RagEvaluator.TestCase("退换货期限是几天",
+                        List.of("7天", "无理由", "退货")),
+                new RagEvaluator.TestCase("包邮条件是什么",
+                        List.of("99元", "包邮", "运费")),
+                new RagEvaluator.TestCase("积分有什么用",
+                        List.of("积分", "兑换", "抵扣")),
+                new RagEvaluator.TestCase("今天天气怎么样",
+                        List.of())
+        );
+
+        // 遍历 0.30 ~ 0.60，步长 0.05
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (double th = 0.30; th <= 0.60; th += 0.05) {
+            RagEvaluator.EvaluationReport report = ragEvaluator.evaluate(testCases, 5, th);
+            Map<String, Object> row = new HashMap<>();
+            row.put("threshold", th);
+            row.put("recall", String.format("%.2f", report.recall()));
+            row.put("precision", String.format("%.2f", report.precision()));
+            row.put("totalHits", report.totalHits());
+            row.put("totalCases", report.totalCases());
+            row.put("details", report.details().stream()
+                    .map(d -> Map.of(
+                            "question", d.question(),
+                            "hit", d.hit(),
+                            "scores", d.scores()
+                    )).collect(Collectors.toList()));
+            results.add(row);
+        }
+
+        return results;
     }
 }
